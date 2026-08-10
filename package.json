@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node index.js",
     "check": "node --check index.js && node --check src/app.js && node --check src/config.js && node --check src/liveExecutor.js && node --check src/indicators/compute.js && node --check src/indicators/snapshot.js",
-    "test:indicators": "node src/indicators/selftest.js"
+    "test:indicators": "node src/indicators/selftest.js",
+    "preflight": "node src/preflight.js"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4",
