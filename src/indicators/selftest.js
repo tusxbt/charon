@@ -7,6 +7,7 @@
 import { ema, sma, rsi, stochRsi, stochRsiBars, atr, supertrend, crossedOver, crossedUnder } from './compute.js';
 import { indicatorSnapshot } from './snapshot.js';
 import { evaluateIndicatorSetup, evaluateIndicatorExit, minimumHistoryMs } from './entry.js';
+import { barsToFetch, refreshIntervalMs } from './candles.js';
 
 let failures = 0;
 const round = (value, dp = 2) => (value === null ? null : Number(value.toFixed(dp)));
@@ -212,6 +213,41 @@ check('an exit oscillator that has not warmed up produces no exit',
 check('a healthy position is not exited', evaluateIndicatorExit(setupContext()), null);
 check('exit rules can be switched off',
   evaluateIndicatorExit(setupContext({ trend: { supertrendFlippedDown: true } }), { exit_on_supertrend_flip: false }), null);
+
+// ── Candle fetch budget ──────────────────────────────────────────────────────
+// Two regressions live here, and both silently blow the API rate limit rather
+// than failing loudly.
+const T = 1_700_000_000;          // newest bar start, in seconds
+const base = { newestTimeSec: T, haveCount: 60, limit: 60, intervalSec: 300 };
+
+check('an empty series fetches the full window',
+  barsToFetch({ ...base, nowMs: T * 1000, newestTimeSec: null, haveCount: 0 }), 60);
+
+// Regression 1: elapsedBars used ceil, so any time inside the forming bar
+// rounded up to a whole bar and every call fetched. Now it serves from cache
+// until the cooldown expires.
+check('a fresh fetch inside the same bar is served from cache',
+  barsToFetch({ ...base, nowMs: (T + 10) * 1000, lastFetchMs: (T + 5) * 1000 }), 0);
+check('after the cooldown, the forming bar is refreshed with the overlap only',
+  barsToFetch({ ...base, nowMs: (T + 120) * 1000, lastFetchMs: (T + 5) * 1000 }), 3);
+check('a closed bar adds itself to the overlap',
+  barsToFetch({ ...base, nowMs: (T + 620) * 1000, lastFetchMs: (T + 5) * 1000 }), 5);
+
+// Regression 2: a token with less history than the window never satisfies
+// haveCount >= limit, so it re-downloaded the whole window on every call.
+check('a short-history series still respects the cooldown',
+  barsToFetch({ ...base, haveCount: 100, limit: 260, intervalSec: 15, nowMs: (T + 1) * 1000, lastFetchMs: T * 1000 }), 0);
+check('and refetches the window once the cooldown expires',
+  barsToFetch({ ...base, haveCount: 100, limit: 260, intervalSec: 15, nowMs: (T + 10) * 1000, lastFetchMs: T * 1000 }), 260);
+
+check('a 15s series may refresh every 3s', refreshIntervalMs(15), 3000);
+check('a 5m series refreshes at most once a minute', refreshIntervalMs(300), 60000);
+check('a 15m series refreshes at most every 3 minutes', refreshIntervalMs(900), 180000);
+
+// The whole point: requests per minute for one open position, both timeframes.
+const perMinute = (intervalSec) => Math.floor(60000 / refreshIntervalMs(intervalSec));
+check('a 10s monitor loop costs at most 20 + 1 requests per minute per position',
+  perMinute(15) + perMinute(300), 21);
 
 console.log(failures === 0 ? '\nAll indicator checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);

@@ -11,6 +11,17 @@ import { makeFailureTracker } from './utils.js';
 setDefaultResultOrder('ipv4first');
 validateConfig();
 
+// Housekeeping runs on its own timer and touches nothing the trader depends on,
+// so a failure there must never reach the process-level handler and take
+// position monitoring down with it.
+function guard(name, fn) {
+  try {
+    fn();
+  } catch (error) {
+    console.log(`[${name}] ${error.message}`);
+  }
+}
+
 export async function startCharon() {
   initDb();
   initLiveExecution();
@@ -35,7 +46,7 @@ export async function startCharon() {
     const { setCandidateHandler: setAlertHandler } = await import('./signals/priceMonitor.js');
     setAlertHandler(processCandidateFromSignals);
     setInterval(() => trackDip(() => monitorPriceAlerts()), 10_000);
-    setInterval(() => cleanupAlerts(), 60 * 60 * 1000);
+    setInterval(() => guard('alert cleanup', cleanupAlerts), 60 * 60 * 1000);
 
     console.log(`[bot] ${APP_NAME} started (server mode: ${SIGNAL_SERVER_URL})`);
   } else {
@@ -64,5 +75,5 @@ export async function startCharon() {
   // 15-second candles accumulate fast across every screened mint; without this
   // the candles table grows without bound.
   const { pruneCandles } = await import('./indicators/candles.js');
-  setInterval(() => pruneCandles(), 60 * 60 * 1000);
+  setInterval(() => guard('candle prune', pruneCandles), 60 * 60 * 1000);
 }
