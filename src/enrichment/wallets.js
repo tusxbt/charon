@@ -1,5 +1,6 @@
 import { db } from '../db/connection.js';
 import { now } from '../utils.js';
+import { JUPITER_DATA_URL } from '../config.js';
 
 export function savedWallets() {
   return db.prepare('SELECT * FROM saved_wallets ORDER BY label').all();
@@ -21,7 +22,7 @@ export async function fetchSavedWalletExposure(mint, holders) {
 
 export async function fetchWalletPnl(address) {
   try {
-    const url = `https://datapi.jup.ag/v1/pnl?addresses=${encodeURIComponent(address)}&includeClosed=false`;
+    const url = `${JUPITER_DATA_URL}/v1/pnl?addresses=${encodeURIComponent(address)}&includeClosed=false`;
     const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
     if (!res.ok) return null;
     const data = await res.json();

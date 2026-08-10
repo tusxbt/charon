@@ -43,9 +43,15 @@ export async function fetchServerSignals() {
     });
     const signals = res.data?.signals || [];
 
-    prune(seenSignals, 10 * 60_000);
-
     const strat = activeStrategy();
+
+    // How long before the same mint is screened again. The original design
+    // fired on one-off fee-claim events, where re-checking a mint added
+    // nothing. An indicator strategy is the opposite: the setup it waits for
+    // appears and disappears within minutes, so a ten-minute blind spot means
+    // sampling roughly one opportunity in forty.
+    const recheckMs = Number(strat.recheck_ms ?? 10 * 60_000);
+    prune(seenSignals, recheckMs);
     const minTokenAgeMs = strat.use_indicators
       ? Math.max(Number(strat.token_age_min_ms || 0), minimumHistoryMs(strat))
       : Number(strat.token_age_min_ms || 0);
@@ -53,10 +59,12 @@ export async function fetchServerSignals() {
     let triggered = 0;
     let dipAlerts = 0;
     let tooYoung = 0;
+    let failed = 0;
 
     for (const signal of signals) {
       const mint = signal.mint;
       if (!mint) continue;
+      try {
 
       // Update graduated map
       if (signal.graduated) {
@@ -189,11 +197,20 @@ export async function fetchServerSignals() {
       }
 
       processed++;
+      } catch (signalError) {
+        // One bad signal must not end the batch. Without this, a failure on the
+        // third of a hundred signals leaves the other ninety-seven unscreened
+        // while every one of them is already marked as seen.
+        failed++;
+        console.log(`[server] ${mint.slice(0, 8)}... ${signalError.message}`);
+        seenSignals.delete(`signal:${mint}`);
+      }
     }
 
     const dipPart = dipAlerts > 0 ? `, ${dipAlerts} dip alerts` : '';
     const youngPart = tooYoung > 0 ? `, ${tooYoung} too young` : '';
-    console.log(`[server] ${processed} signals, ${triggered} triggered${dipPart}${youngPart}, tracking ${trending.size}`);
+    const failedPart = failed > 0 ? `, ${failed} failed` : '';
+    console.log(`[server] ${processed} signals, ${triggered} triggered${dipPart}${youngPart}${failedPart}, tracking ${trending.size}`);
   } catch (err) {
     console.log(`[server] ${err.message}`);
   }

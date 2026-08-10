@@ -36,7 +36,7 @@ export async function refreshCandidateForExecution(row) {
   const gmgn = await fetchGmgnTokenInfo(mint, false);
   const asset = await fetchJupiterAsset(mint, { useCache: false });
   const holders = await fetchJupiterHolders(mint);
-  const chart = await fetchJupiterChartContext(mint);
+  const chart = execStrat.max_ath_distance_pct < 0 ? await fetchJupiterChartContext(mint) : candidate.chart ?? null;
   const selectedTrending = trending.get(mint) || candidate.trending || null;
   const selectedHolders = holders?.holders?.length ? holders : candidate.holders;
   const selectedSavedWalletExposure = selectedHolders

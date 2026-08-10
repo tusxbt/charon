@@ -10,7 +10,7 @@
 
 import 'dotenv/config';
 import axios from 'axios';
-import { SIGNAL_SERVER_URL, SIGNAL_SERVER_KEY, JSON_HEADERS } from './config.js';
+import { SIGNAL_SERVER_URL, SIGNAL_SERVER_KEY, JSON_HEADERS, JUPITER_DATA_URL } from './config.js';
 import { initDb } from './db/connection.js';
 import { activeStrategy } from './db/settings.js';
 import { minimumHistoryMs } from './indicators/entry.js';
@@ -86,7 +86,7 @@ if (!strat.use_indicators) {
   for (const interval of intervals) {
     const want = interval === strat.entry_interval ? strat.entry_candles : strat.osc_candles;
     try {
-      const url = new URL(`https://datapi.jup.ag/v2/charts/${mint}`);
+      const url = new URL(`${JUPITER_DATA_URL}/v2/charts/${mint}`);
       url.searchParams.set('interval', interval);
       url.searchParams.set('to', String(Date.now()));
       url.searchParams.set('candles', String(want));

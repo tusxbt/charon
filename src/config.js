@@ -21,6 +21,11 @@ export const SOLANA_PRIVATE_KEY = process.env.SOLANA_PRIVATE_KEY || process.env.
 export const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL || `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
 export const SOLANA_WS_URL = process.env.SOLANA_WS_URL || `wss://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
 export const JUPITER_SWAP_BASE_URL = process.env.JUPITER_SWAP_BASE_URL || 'https://api.jup.ag/swap/v2';
+// Read-only market data (candles, price, holders, PnL). Overridable so the
+// pipeline can be pointed at a stub for end-to-end testing, and so a change of
+// host does not require a code edit.
+export const JUPITER_DATA_URL = (process.env.JUPITER_DATA_URL || 'https://datapi.jup.ag').replace(/\/$/, '');
+export const JUPITER_PRICE_URL = (process.env.JUPITER_PRICE_URL || 'https://lite-api.jup.ag').replace(/\/$/, '');
 export const JUPITER_SLIPPAGE_BPS = Number(process.env.JUPITER_SLIPPAGE_BPS || 300);
 export const LIVE_MIN_SOL_RESERVE_LAMPORTS = Math.floor(Number(process.env.LIVE_MIN_SOL_RESERVE || 0.02) * 1_000_000_000);
 

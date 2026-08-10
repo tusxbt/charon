@@ -7,13 +7,28 @@ import { numSetting } from '../db/settings.js';
 import { candidateSummary, formatPosition } from './format.js';
 import { candidateButtons, positionButtons, intentButtons } from './menus.js';
 
+/**
+ * Notifications must never break trading.
+ *
+ * Every send here sits on the path between deciding to trade and finishing the
+ * cycle, and a throw propagates all the way up to the signal loop — one
+ * unreachable Telegram call aborted the whole poll, leaving the remaining
+ * signals unscreened while the mints were already marked as seen. A failed
+ * message is logged and the caller continues; callers that use the returned
+ * message id already guard against a missing result.
+ */
 export async function sendTelegram(text, extra = {}) {
-  return bot.sendMessage(TELEGRAM_CHAT_ID, text, {
-    parse_mode: 'HTML',
-    disable_web_page_preview: true,
-    ...(TELEGRAM_TOPIC_ID ? { message_thread_id: Number(TELEGRAM_TOPIC_ID) } : {}),
-    ...extra,
-  });
+  try {
+    return await bot.sendMessage(TELEGRAM_CHAT_ID, text, {
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+      ...(TELEGRAM_TOPIC_ID ? { message_thread_id: Number(TELEGRAM_TOPIC_ID) } : {}),
+      ...extra,
+    });
+  } catch (error) {
+    console.log(`[telegram] send failed: ${error.message}`);
+    return null;
+  }
 }
 
 export async function sendCandidateAlert(candidateId, candidate, decision) {
@@ -21,7 +36,7 @@ export async function sendCandidateAlert(candidateId, candidate, decision) {
   db.prepare(`
     INSERT INTO alerts (candidate_id, mint, kind, sent_at_ms, telegram_message_id, payload_json)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(candidateId, candidate.token.mint, 'candidate', now(), sent.message_id, json({ candidate, decision }));
+  `).run(candidateId, candidate.token.mint, 'candidate', now(), sent?.message_id ?? null, json({ candidate, decision }));
 }
 
 export async function sendPositionOpen(positionId) {

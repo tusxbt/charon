@@ -290,6 +290,7 @@ export function initDb() {
     require_fee_claim: false,
     token_age_min_ms: 3300000,
     token_age_max_ms: 0,
+    recheck_ms: 120000,
     min_mcap_usd: 15000,
     max_mcap_usd: 0,
     min_fee_claim_sol: 0,

@@ -134,7 +134,9 @@ export async function buildCandidate({ mint, fee = null, signature = null, gradu
   const gmgn = await fetchGmgnTokenInfo(mint);
   const jupiterAsset = await fetchJupiterAsset(mint);
   const holders = await fetchJupiterHolders(mint);
-  const chart = await fetchJupiterChartContext(mint);
+  // Three chart requests that only the ATH gate reads. With that gate off they
+  // are pure cost — and this runs for every signal in every poll cycle.
+  const chart = strat.max_ath_distance_pct < 0 ? await fetchJupiterChartContext(mint) : null;
   const savedWalletExposure = await fetchSavedWalletExposure(mint, holders);
   const twitterNarrative = await fetchTwitterNarrative(graduatedCoin || jupiterAsset, gmgn);
   // Candles are only pulled when the active strategy actually reads them —

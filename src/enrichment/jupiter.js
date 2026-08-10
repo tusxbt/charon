@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { WSOL_MINT, JSON_HEADERS } from '../config.js';
+import { WSOL_MINT, JSON_HEADERS, JUPITER_DATA_URL, JUPITER_PRICE_URL } from '../config.js';
 import { now } from '../utils.js';
 
 const jupiterAssetCache = new Map();
@@ -60,7 +60,7 @@ async function fetchJupiterAsset(mint, { useCache = true, ttlMs = 20_000 } = {})
   if (useCache && cached && now() - cached.at < ttlMs) return cached.data;
   if (jupiterAssetBackoffActive()) return cached?.data || null;
   try {
-    const url = new URL('https://datapi.jup.ag/v1/assets/search');
+    const url = new URL(`${JUPITER_DATA_URL}/v1/assets/search`);
     url.searchParams.set('query', mint);
     const res = await axios.get(url.toString(), {
       timeout: 10_000,
@@ -79,7 +79,7 @@ async function fetchJupiterAsset(mint, { useCache = true, ttlMs = 20_000 } = {})
 
 async function fetchSolUsdPrice() {
   try {
-    const res = await axios.get(`https://lite-api.jup.ag/price/v3?ids=${WSOL_MINT}`, {
+    const res = await axios.get(`${JUPITER_PRICE_URL}/price/v3?ids=${WSOL_MINT}`, {
       timeout: 5000,
       headers: JSON_HEADERS,
     });
@@ -100,7 +100,7 @@ async function estimateTokenAmountFromSol(sizeSol, entryPrice) {
 
 async function fetchJupiterHolders(mint) {
   try {
-    const res = await axios.get(`https://datapi.jup.ag/v1/holders/${mint}`, {
+    const res = await axios.get(`${JUPITER_DATA_URL}/v1/holders/${mint}`, {
       timeout: 10_000,
       headers: JSON_HEADERS,
     });
@@ -157,7 +157,7 @@ function summarizeCandles(label, candles) {
 }
 
 async function fetchJupiterChartWindow(mint, interval, candles, label) {
-  const url = new URL(`https://datapi.jup.ag/v2/charts/${mint}`);
+  const url = new URL(`${JUPITER_DATA_URL}/v2/charts/${mint}`);
   url.searchParams.set('interval', interval);
   url.searchParams.set('to', String(now()));
   url.searchParams.set('candles', String(candles));
@@ -208,7 +208,7 @@ const IGNORED_PNL_MINTS = new Set([
 
 async function fetchJupiterWalletPnl(walletAddress) {
   try {
-    const url = new URL('https://datapi.jup.ag/v1/pnl');
+    const url = new URL(`${JUPITER_DATA_URL}/v1/pnl`);
     url.searchParams.set('addresses', walletAddress);
     url.searchParams.set('includeClosed', 'false');
     const res = await axios.get(url.toString(), { timeout: 10_000, headers: JSON_HEADERS });

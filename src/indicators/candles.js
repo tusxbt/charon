@@ -6,7 +6,7 @@
 // newest stored one, plus a small overlap to correct the still-forming bar.
 
 import axios from 'axios';
-import { JSON_HEADERS } from '../config.js';
+import { JSON_HEADERS, JUPITER_DATA_URL } from '../config.js';
 import { now } from '../utils.js';
 import { db } from '../db/connection.js';
 import { intervalSeconds } from './intervals.js';
@@ -111,7 +111,7 @@ function storedCount(mint, interval) {
 }
 
 async function fetchFromApi(mint, interval, count) {
-  const url = new URL(`https://datapi.jup.ag/v2/charts/${mint}`);
+  const url = new URL(`${JUPITER_DATA_URL}/v2/charts/${mint}`);
   url.searchParams.set('interval', interval);
   url.searchParams.set('to', String(now()));
   url.searchParams.set('candles', String(Math.min(count, MAX_FETCH_BARS)));
