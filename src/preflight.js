@@ -8,6 +8,7 @@
 import 'dotenv/config';
 import { initDb } from './db/connection.js';
 import { activeStrategy } from './db/settings.js';
+import { tradingMode } from './db/positions.js';
 import { minimumHistoryMs } from './indicators/entry.js';
 import { intervalSeconds, knownIntervals } from './indicators/intervals.js';
 
@@ -68,8 +69,17 @@ if (env('GMGN_ENABLED') === 'false') {
 line('ok', 'Jupiter datapi', 'no key needed (candles, price, holders)');
 
 // ── Execution mode ───────────────────────────────────────────────────────────
-const mode = env('TRADING_MODE') || 'dry_run';
-console.log(`\nExecution (TRADING_MODE=${mode})`);
+// Read from the database, not from .env: the stored value is what actually
+// drives execution, and the Telegram menu can change it at runtime.
+initDb();
+const mode = tradingMode();
+console.log(`\nExecution (mode=${mode})`);
+if (has('TRADING_MODE') && env('TRADING_MODE') !== mode) {
+  warn('mode mismatch', `.env says ${env('TRADING_MODE')} but the database says ${mode}`);
+}
+if (mode === 'live') {
+  line('warn', 'LIVE', 'real funds will be spent on every approved entry');
+}
 if (mode === 'dry_run') {
   line('off', 'wallet', 'not needed — trades are simulated into SQLite');
 } else {
@@ -85,7 +95,6 @@ if (mode === 'dry_run') {
 // ── Active strategy ──────────────────────────────────────────────────────────
 console.log('\nActive strategy');
 try {
-  initDb();
   const strat = activeStrategy();
   line('ok', 'strategy', `${strat.id} (${strat.name})`);
   line('ok', 'entry', 'rule based — a candidate that passes every filter is bought');

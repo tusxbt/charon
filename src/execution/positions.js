@@ -122,7 +122,13 @@ export async function refreshCandidateForExecution(row) {
 const sellInProgress = new Set();
 
 export async function refreshPosition(position, { autoExit = true, jupiterPnl = null } = {}) {
-  const asset = await fetchJupiterAsset(position.mint);
+  // Deliberately uncached. The asset helper caches for 20 seconds, which is
+  // longer than the monitor interval — so every other tick was evaluating TP,
+  // SL and trailing against a price up to 20 seconds old. For a stop-loss on a
+  // token that can halve in a minute, that delay is the difference between the
+  // stop working and not. One request per position per tick is the correct
+  // price for an accurate stop.
+  const asset = await fetchJupiterAsset(position.mint, { useCache: false });
   const price = firstPositiveNumber(asset?.usdPrice, position.high_water_price, position.entry_price);
   const mcap = firstPositiveNumber(asset?.mcap, asset?.fdv, position.high_water_mcap, position.entry_mcap);
   if (!Number.isFinite(Number(mcap)) || !Number.isFinite(Number(position.entry_mcap)) || Number(position.entry_mcap) <= 0) {
@@ -156,17 +162,22 @@ export async function refreshPosition(position, { autoExit = true, jupiterPnl = 
     console.log(`[position] ${position.id} partial TP at ${pnlPercent.toFixed(1)}% (${strat.partial_tp_sell_percent}% sell)`);
     if (position.execution_mode === 'live' && position.token_amount_raw) {
       try {
-        const sellAmount = Math.floor(Number(position.token_amount_raw) * (strat.partial_tp_sell_percent / 100));
-        if (sellAmount > 0) {
-          const sell = await executeLiveSell({ ...position, token_amount_raw: String(sellAmount) }, 'PARTIAL_TP');
-          const remaining = Number(position.token_amount_raw) - sellAmount;
-          db.prepare('UPDATE dry_run_positions SET token_amount_raw = ? WHERE id = ?').run(String(remaining), position.id);
+        // BigInt, not Number: raw token amounts carry the mint's decimals, and a
+        // token with 9 decimals and a large supply exceeds 2^53, where Number
+        // silently stops being exact. Selling a wrong amount is unrecoverable.
+        const held = BigInt(position.token_amount_raw);
+        const bps = BigInt(Math.round(strat.partial_tp_sell_percent * 100));
+        const sellAmount = held * bps / 10000n;
+        if (sellAmount > 0n) {
+          const sell = await executeLiveSell({ ...position, token_amount_raw: sellAmount.toString() }, 'PARTIAL_TP');
+          const remaining = held - sellAmount;
+          db.prepare('UPDATE dry_run_positions SET token_amount_raw = ? WHERE id = ?').run(remaining.toString(), position.id);
           db.prepare(`
             INSERT INTO dry_run_trades (position_id, mint, side, at_ms, price, mcap, size_sol, token_amount_est, reason, payload_json)
             VALUES (?, ?, 'sell', ?, ?, ?, ?, ?, 'PARTIAL_TP', ?)
           `).run(position.id, position.mint, now(), price, mcap,
-            position.size_sol * (strat.partial_tp_sell_percent / 100), sellAmount,
-            json({ pnlPercent, sell, partialSellPercent: strat.partial_tp_sell_percent, remaining }));
+            position.size_sol * (strat.partial_tp_sell_percent / 100), Number(sellAmount),
+            json({ pnlPercent, sell, partialSellPercent: strat.partial_tp_sell_percent, remaining: remaining.toString() }));
           console.log(`[position] ${position.id} partial TP sold ${sellAmount} tokens, ${remaining} remaining`);
         }
       } catch (err) {

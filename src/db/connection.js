@@ -208,38 +208,78 @@ export function initDb() {
   ensureColumn('dry_run_positions', 'partial_tp_done', 'INTEGER DEFAULT 0');
   ensureColumn('decision_logs', 'strategy_id', 'TEXT');
 
+  // Keys whose value comes from the environment when it is set there. These are
+  // re-applied on every start, unlike the seed defaults below.
+  //
+  // They used to be seeded with INSERT OR IGNORE, which means the environment
+  // only ever applied on the very first run of a fresh database. Once a value
+  // was stored, editing .env did nothing — including TRADING_MODE. A bot that
+  // had been set to `live` once kept trading live no matter what .env said
+  // afterwards, silently spending real money against a config file that
+  // claimed dry_run.
+  //
+  // The Telegram menu still changes these at runtime; a restart re-asserts what
+  // .env says, which is what an operator editing a config file expects.
+  const fromEnv = {
+    trading_mode: process.env.TRADING_MODE,
+    candidate_max_age_ms: process.env.CANDIDATE_MAX_AGE_MS,
+    max_open_positions: process.env.MAX_OPEN_POSITIONS,
+    min_fee_claim_sol: process.env.MIN_FEE_CLAIM_SOL,
+    gmgn_request_delay_ms: process.env.GMGN_REQUEST_DELAY_MS,
+    gmgn_max_retries: process.env.GMGN_MAX_RETRIES,
+    trending_enabled: process.env.TRENDING_ENABLED,
+    trending_source: process.env.TRENDING_SOURCE,
+    trending_allow_degen: process.env.TRENDING_ALLOW_DEGEN,
+    trending_interval: process.env.TRENDING_INTERVAL,
+    trending_limit: process.env.TRENDING_LIMIT,
+    trending_order_by: process.env.TRENDING_ORDER_BY,
+    trending_min_volume_usd: process.env.TRENDING_MIN_VOLUME_USD,
+    trending_min_swaps: process.env.TRENDING_MIN_SWAPS,
+    trending_max_rug_ratio: process.env.TRENDING_MAX_RUG_RATIO,
+    trending_max_bundler_rate: process.env.TRENDING_MAX_BUNDLER_RATE,
+  };
+
   const defaults = {
     agent_enabled: 'true',
-    trading_mode: process.env.TRADING_MODE || 'dry_run',
-    candidate_max_age_ms: process.env.CANDIDATE_MAX_AGE_MS || String(10 * 60 * 1000),
-    max_open_positions: process.env.MAX_OPEN_POSITIONS || '3',
+    trading_mode: 'dry_run',
+    candidate_max_age_ms: String(10 * 60 * 1000),
+    max_open_positions: '3',
     dry_run_buy_sol: '0.1',
     default_tp_percent: '50',
     default_sl_percent: '-25',
     default_trailing_enabled: 'true',
     default_trailing_percent: '20',
-    min_fee_claim_sol: process.env.MIN_FEE_CLAIM_SOL || '2',
+    min_fee_claim_sol: '2',
     min_mcap_usd: '0',
     max_mcap_usd: '0',
     min_gmgn_total_fee_sol: '0',
     min_graduated_volume_usd: '0',
     max_top20_holder_percent: '100',
     min_saved_wallet_holders: '0',
-    gmgn_request_delay_ms: process.env.GMGN_REQUEST_DELAY_MS || '2500',
-    gmgn_max_retries: process.env.GMGN_MAX_RETRIES || '2',
-    trending_enabled: process.env.TRENDING_ENABLED || 'true',
-    trending_source: process.env.TRENDING_SOURCE || 'jupiter',
-    trending_allow_degen: process.env.TRENDING_ALLOW_DEGEN || 'false',
-    trending_interval: process.env.TRENDING_INTERVAL || '5m',
-    trending_limit: process.env.TRENDING_LIMIT || '100',
-    trending_order_by: process.env.TRENDING_ORDER_BY || 'volume',
-    trending_min_volume_usd: process.env.TRENDING_MIN_VOLUME_USD || '0',
-    trending_min_swaps: process.env.TRENDING_MIN_SWAPS || '0',
-    trending_max_rug_ratio: process.env.TRENDING_MAX_RUG_RATIO || '0.3',
-    trending_max_bundler_rate: process.env.TRENDING_MAX_BUNDLER_RATE || '0.5',
+    gmgn_request_delay_ms: '2500',
+    gmgn_max_retries: '2',
+    trending_enabled: 'true',
+    trending_source: 'jupiter',
+    trending_allow_degen: 'false',
+    trending_interval: '5m',
+    trending_limit: '100',
+    trending_order_by: 'volume',
+    trending_min_volume_usd: '0',
+    trending_min_swaps: '0',
+    trending_max_rug_ratio: '0.3',
+    trending_max_bundler_rate: '0.5',
   };
-  const insert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
-  for (const [key, value] of Object.entries(defaults)) insert.run(key, value);
+  const seed = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+  for (const [key, value] of Object.entries(defaults)) seed.run(key, value);
+
+  const override = db.prepare(`
+    INSERT INTO settings (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `);
+  for (const [key, value] of Object.entries(fromEnv)) {
+    if (value === undefined || value === '') continue;
+    override.run(key, String(value));
+  }
 
   // Seed default strategies
   const stratInsert = db.prepare('INSERT OR IGNORE INTO strategies (id, name, enabled, config_json, created_at_ms) VALUES (?, ?, ?, ?, ?)');

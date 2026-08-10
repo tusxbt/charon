@@ -17,6 +17,19 @@ export function canOpenMorePositions() {
   return openPositionCount() < max;
 }
 
+/**
+ * The one place position size is decided.
+ *
+ * It used to be spelled out at six call sites, and two of them — the trade
+ * intent record and the confirmation message — read the global default instead
+ * of the strategy's value. In confirm mode that meant approving "0.1 SOL" and
+ * spending whatever position_size_sol actually was.
+ */
+export function positionSizeSol() {
+  const strat = activeStrategy();
+  return Number(strat.position_size_sol ?? numSetting('dry_run_buy_sol', 0.1));
+}
+
 export function tradingMode() {
   const mode = setting('trading_mode', 'dry_run');
   return ['dry_run', 'confirm', 'live'].includes(mode) ? mode : 'dry_run';
@@ -28,7 +41,7 @@ export function allPositions(limit = 10) {
 
 export function createDryRunPosition(candidateId, candidate, decision, reason = 'rule_buy') {
   const strat = activeStrategy();
-  const sizeSol = strat.position_size_sol ?? numSetting('dry_run_buy_sol', 0.1);
+  const sizeSol = positionSizeSol();
   const entryPrice = Number(candidate.metrics.priceUsd || 0) || null;
   const entryMcap = Number(candidate.metrics.marketCapUsd || candidate.metrics.graduatedMarketCapUsd || 0) || null;
   const tp = Number(decision.suggested_tp_percent || strat.tp_percent || numSetting('default_tp_percent', 50));
@@ -82,7 +95,7 @@ export function createDryRunPosition(candidateId, candidate, decision, reason = 
 
 export function createLivePosition(candidateId, candidate, decision, swap, reason = 'live_buy') {
   const strat = activeStrategy();
-  const sizeSol = strat.position_size_sol ?? numSetting('dry_run_buy_sol', 0.1);
+  const sizeSol = positionSizeSol();
   const entryPrice = Number(candidate.metrics.priceUsd || 0) || null;
   const entryMcap = Number(candidate.metrics.marketCapUsd || candidate.metrics.graduatedMarketCapUsd || 0) || null;
   const tp = Number(decision.suggested_tp_percent || strat.tp_percent || numSetting('default_tp_percent', 50));

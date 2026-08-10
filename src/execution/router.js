@@ -5,7 +5,7 @@ import { WSOL_MINT, LIVE_MIN_SOL_RESERVE_LAMPORTS } from '../config.js';
 import { escapeHtml, fmtSol } from '../format.js';
 import { executeJupiterSwap, liveWalletBalanceLamports, fetchLiveTokenBalance } from '../liveExecutor.js';
 import { activeStrategy } from '../db/settings.js';
-import { createLivePosition, canOpenMorePositions, openPositionCount } from '../db/positions.js';
+import { createLivePosition, canOpenMorePositions, openPositionCount, positionSizeSol } from '../db/positions.js';
 import { intentById } from '../db/intents.js';
 import { logDecisionEvent } from '../db/decisions.js';
 import { refreshCandidateForExecution } from './positions.js';
@@ -17,7 +17,7 @@ import { createTradeIntent } from '../db/intents.js';
 
 export async function executeLiveBuy(selectedRow, decision, rows = [], triggerCandidateId = null) {
   const strat = activeStrategy();
-  const amountLamports = Math.floor((strat.position_size_sol ?? numSetting('dry_run_buy_sol', 0.1)) * 1_000_000_000);
+  const amountLamports = Math.floor(positionSizeSol() * 1_000_000_000);
   const balance = await liveWalletBalanceLamports();
   if (balance < amountLamports + LIVE_MIN_SOL_RESERVE_LAMPORTS) {
     throw new Error(`Insufficient SOL balance. Need ${fmtSol((amountLamports + LIVE_MIN_SOL_RESERVE_LAMPORTS) / 1_000_000_000)} SOL including reserve.`);
@@ -45,8 +45,18 @@ export async function executeLiveBuy(selectedRow, decision, rows = [], triggerCa
 }
 
 export async function executeLiveSell(position, reason) {
-  const amount = position.token_amount_raw || position.token_amount_est;
-  if (!amount || Number(amount) <= 0) throw new Error('Live position has no token amount to sell.');
+  let amount = position.token_amount_raw || position.token_amount_est;
+  if (!amount || Number(amount) <= 0) {
+    // A buy can succeed while the execute response carries no output amount and
+    // the follow-up balance read fails. Without this fallback the position can
+    // never be closed: the sell throws on every monitor tick, so the stop-loss
+    // never fires and real money sits unprotected. The wallet is authoritative.
+    amount = await fetchLiveTokenBalance(position.mint);
+    if (amount) console.log(`[live] position ${position.id} sell amount recovered from wallet balance`);
+  }
+  if (!amount || Number(amount) <= 0) {
+    throw new Error('Live position has no recorded token amount and the wallet holds none of this mint.');
+  }
   return executeJupiterSwap({
     inputMint: position.mint,
     outputMint: WSOL_MINT,
@@ -77,7 +87,7 @@ export async function executeConfirmedIntent(chatId, intentId) {
       ].join('\n'), { parse_mode: 'HTML', disable_web_page_preview: true });
     }
     const strat = activeStrategy();
-    const amountLamports = Math.floor((strat.position_size_sol ?? numSetting('dry_run_buy_sol', 0.1)) * 1_000_000_000);
+    const amountLamports = Math.floor(positionSizeSol() * 1_000_000_000);
     const balance = await liveWalletBalanceLamports();
     if (balance < amountLamports + LIVE_MIN_SOL_RESERVE_LAMPORTS) {
       db.prepare('UPDATE trade_intents SET status = ?, updated_at_ms = ? WHERE id = ?').run('rejected_insufficient_balance', now(), intentId);

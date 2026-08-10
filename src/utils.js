@@ -143,9 +143,28 @@ export function formatWindow(ms) {
   return `${Math.round(ms / 60_000)}m`;
 }
 
+/**
+ * Wraps a polling loop with failure alerting and re-entrancy protection.
+ *
+ * setInterval does not wait for the previous run, so a slow cycle overlaps the
+ * next one. For the position monitor that means two passes evaluating the same
+ * position at once, and for the signal loop it means double the API calls
+ * exactly when the network is already struggling. Overlapping runs are skipped
+ * rather than queued: the next tick is only seconds away, and stale work is
+ * worth less than fresh work.
+ */
 export function makeFailureTracker(name, alertFn, threshold = 3) {
   let count = 0;
+  let running = false;
+  let skipped = 0;
   return async (fn) => {
+    if (running) {
+      skipped++;
+      // Only mention it when it is persistent enough to matter.
+      if (skipped % 10 === 1) console.log(`[${name}] previous run still in flight, skipping (${skipped} so far)`);
+      return;
+    }
+    running = true;
     try {
       await fn();
       count = 0;
@@ -153,9 +172,11 @@ export function makeFailureTracker(name, alertFn, threshold = 3) {
       count++;
       console.log(`[${name}] ${err.message}`);
       if (count >= threshold) {
-        alertFn(`⚠️ <b>${name}</b> failed ${count}x in a row: ${err.message}`).catch(() => {});
+        Promise.resolve(alertFn(`⚠️ <b>${name}</b> failed ${count}x in a row: ${err.message}`)).catch(() => {});
         count = 0;
       }
+    } finally {
+      running = false;
     }
   };
 }

@@ -4,6 +4,7 @@ import { now, json } from '../utils.js';
 import { db } from '../db/connection.js';
 import { escapeHtml, fmtPct, fmtSol, fmtUsd, short, gmgnLink } from '../format.js';
 import { numSetting } from '../db/settings.js';
+import { positionSizeSol } from '../db/positions.js';
 import { candidateSummary, formatPosition } from './format.js';
 import { candidateButtons, positionButtons, intentButtons } from './menus.js';
 
@@ -56,7 +57,7 @@ export async function sendTradeIntent(intentId, candidate, decision) {
     '',
     candidateSummary(candidate, decision),
     '',
-    `Size: <b>${fmtSol(numSetting('dry_run_buy_sol', 0.1))} SOL</b>`,
+    `Size: <b>${fmtSol(positionSizeSol())} SOL</b>`,
     'Execution: confirmation required before signing.',
   ].join('\n'), intentButtons(intentId));
 }
