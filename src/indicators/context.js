@@ -29,7 +29,15 @@ export async function buildIndicatorContext(mint, config = {}) {
     entryInterval: cfg.entry_interval,
     oscInterval: cfg.osc_interval,
     trendInterval: cfg.trend_interval,
-    entry: indicatorSnapshot(entryCandles, { ema_periods: [50, 100, 200] }),
+    // The entry snapshot now carries StochRSI as well: entry reads it here on
+    // the fast timeframe, while the osc snapshot below serves the exit rule.
+    entry: indicatorSnapshot(entryCandles, {
+      ema_periods: [50, 100, 200],
+      stochrsi_rsi_period: cfg.stochrsi_rsi_period,
+      stochrsi_stoch_period: cfg.stochrsi_stoch_period,
+      stochrsi_k_smooth: cfg.stochrsi_k_smooth,
+      stochrsi_d_smooth: cfg.stochrsi_d_smooth,
+    }),
     osc: oscCandles.length
       ? indicatorSnapshot(oscCandles, {
           stochrsi_rsi_period: cfg.stochrsi_rsi_period,
@@ -64,9 +72,9 @@ export function compactIndicators(context, setup = null) {
     ema50: context.entry?.ema50 ?? null,
     ema100: context.entry?.ema100 ?? null,
     ema200: context.entry?.ema200 ?? null,
-    rsi: context.osc?.rsi ?? null,
-    stochRsiK: context.osc?.stochRsiK ?? null,
-    stochRsiD: context.osc?.stochRsiD ?? null,
+    stochRsiK: context.entry?.stochRsiK ?? null,
+    stochRsiD: context.entry?.stochRsiD ?? null,
+    exitStochRsiK: context.osc?.stochRsiK ?? null,
     supertrendDirection: context.trend?.supertrendDirection ?? null,
     setupPassed: setup?.passed ?? null,
     setupFailures: setup?.failures ?? [],

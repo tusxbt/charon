@@ -1,7 +1,10 @@
 // Pure entry/exit rules for the multi-timeframe indicator setup:
-//   entry TF (15s default) — price sitting in the EMA 50/100/200 zone
-//   osc TF   (5m  default) — Stochastic RSI at the bottom
-//   trend TF (15m default) — Supertrend bullish
+//   entry TF (15s default) — price in the EMA 50/100/200 zone, StochRSI bottomed
+//   trend TF (5m  default) — Supertrend bullish
+//   osc TF   (5m  default) — StochRSI overbought, used for exits only
+//
+// Entry and exit read StochRSI on different timeframes on purpose: entry reacts
+// on the fast series, exit waits for the slower one to call the move over.
 //
 // Failure strings mirror the style of candidateBuilder.filterCandidate so both
 // filter layers read the same way in logs and Telegram messages.
@@ -35,12 +38,14 @@ export const DEFAULT_SETUP_CONFIG = {
   supertrend_period: 10,
   supertrend_multiplier: 3,
 
+  // Entry threshold, read on the entry timeframe.
   stochrsi_bottom_max: 20,
   require_stochrsi_cross_up: false,
 
   // Exits
   exit_on_supertrend_flip: true,
   exit_on_ema_death_cross: true,
+  // Exit threshold, read on the osc timeframe.
   exit_stochrsi_overbought: 80,
 };
 
@@ -55,6 +60,11 @@ export const DEFAULT_SETUP_CONFIG = {
  */
 export function minimumHistoryMs(config = {}) {
   const cfg = { ...DEFAULT_SETUP_CONFIG, ...config };
+  // Only what ENTRY needs belongs here. The exit oscillator lives on a slower
+  // timeframe and warms up long after entry is possible; gating entry on it
+  // would reject tokens the strategy can legitimately trade. An exit indicator
+  // that is not ready simply produces no exit signal — TP, SL and trailing
+  // still cover the position.
   const needs = [
     [cfg.min_entry_candles, cfg.entry_interval],
     // StochRSI stacks two lookbacks plus two smoothings, so it warms up far
@@ -64,7 +74,7 @@ export function minimumHistoryMs(config = {}) {
       stochPeriod: cfg.stochrsi_stoch_period,
       kSmooth: cfg.stochrsi_k_smooth,
       dSmooth: cfg.stochrsi_d_smooth,
-    }), cfg.osc_interval],
+    }), cfg.entry_interval],
     // ATR seeds at `period` bars and a direction needs the bar after it.
     [cfg.supertrend_period + 1, cfg.trend_interval],
   ];
@@ -143,20 +153,18 @@ export function evaluateIndicatorSetup(context, config = {}) {
     }
   }
 
-  // ── Stochastic RSI at the bottom, on its own timeframe ────────────────────
-  details.rsi = osc?.rsi ?? null;
-  details.stochRsiK = osc?.stochRsiK ?? null;
-  details.stochRsiD = osc?.stochRsiD ?? null;
-  if (!osc) {
-    failures.push(`StochRSI ${cfg.osc_interval}: unavailable`);
-  } else if (osc.stochRsiK === null) {
-    failures.push(`StochRSI ${cfg.osc_interval}: unavailable (${osc.candles} candles)`);
+  // ── Stochastic RSI at the bottom, on the entry timeframe ──────────────────
+  details.stochRsiK = entry.stochRsiK ?? null;
+  details.stochRsiD = entry.stochRsiD ?? null;
+  details.exitStochRsiK = osc?.stochRsiK ?? null;
+  if (entry.stochRsiK === null || entry.stochRsiK === undefined) {
+    failures.push(`StochRSI ${cfg.entry_interval}: unavailable (${entry.candles} candles)`);
   } else {
-    if (osc.stochRsiK > cfg.stochrsi_bottom_max) {
-      failures.push(`StochRSI %K ${cfg.osc_interval}: ${osc.stochRsiK.toFixed(1)} > ${cfg.stochrsi_bottom_max}`);
+    if (entry.stochRsiK > cfg.stochrsi_bottom_max) {
+      failures.push(`StochRSI %K ${cfg.entry_interval}: ${entry.stochRsiK.toFixed(1)} > ${cfg.stochrsi_bottom_max}`);
     }
-    if (cfg.require_stochrsi_cross_up && !osc.stochRsiCrossUp) {
-      failures.push(`StochRSI ${cfg.osc_interval}: no %K/%D cross up on the last bar`);
+    if (cfg.require_stochrsi_cross_up && !entry.stochRsiCrossUp) {
+      failures.push(`StochRSI ${cfg.entry_interval}: no %K/%D cross up on the last bar`);
     }
   }
 

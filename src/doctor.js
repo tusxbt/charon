@@ -105,15 +105,19 @@ if (!strat.use_indicators) {
         ok(`${interval}: ${candles.length} candles`);
       }
       if (interval === strat.entry_interval) {
-        const snap = indicatorSnapshot(candles, { ema_periods: [50, 100, 200] });
+        const snap = indicatorSnapshot(candles, {
+          ema_periods: [50, 100, 200],
+          stochrsi_rsi_period: strat.stochrsi_rsi_period, stochrsi_stoch_period: strat.stochrsi_stoch_period,
+        });
         info(`EMA50 ${snap.ema50?.toFixed(8) ?? 'null'} / EMA200 ${snap.ema200?.toFixed(8) ?? 'null'}`);
+        info(`entry StochRSI %K ${snap.stochRsiK?.toFixed(1) ?? 'null'} (needs < ${strat.stochrsi_bottom_max})`);
       }
       if (interval === strat.osc_interval) {
         const snap = indicatorSnapshot(candles, {
           stochrsi_rsi_period: strat.stochrsi_rsi_period, stochrsi_stoch_period: strat.stochrsi_stoch_period,
           supertrend_period: strat.supertrend_period, supertrend_multiplier: strat.supertrend_multiplier,
         });
-        info(`RSI ${snap.rsi?.toFixed(1) ?? 'null'} / StochRSI %K ${snap.stochRsiK?.toFixed(1) ?? 'null'} / Supertrend ${snap.supertrendDirection ?? 'null'}`);
+        info(`exit StochRSI %K ${snap.stochRsiK?.toFixed(1) ?? 'null'} (exits at >= ${strat.exit_stochrsi_overbought}) / Supertrend ${snap.supertrendDirection ?? 'null'}`);
       }
     } catch (err) {
       const status = err.response?.status;

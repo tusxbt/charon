@@ -275,8 +275,8 @@ export function initDb() {
     max_hold_ms: 0,
   }), ts);
 
-  // Multi-timeframe indicator strategy: EMA cluster on 15s, RSI/Stochastic on
-  // 5m, Supertrend direction on 5m.
+  // Multi-timeframe indicator strategy: EMA cluster and StochRSI entry on 15s,
+  // Supertrend direction on 5m, StochRSI exit on 5m.
   //
   // Unlike every other strategy here it needs tokens to be OLD enough, not
   // young enough. token_age_min_ms below is only a floor — serverClient raises
@@ -288,7 +288,7 @@ export function initDb() {
     entry_mode: 'immediate',
     min_source_count: 1,
     require_fee_claim: false,
-    token_age_min_ms: 9600000,
+    token_age_min_ms: 3300000,
     token_age_max_ms: 0,
     min_mcap_usd: 15000,
     max_mcap_usd: 0,

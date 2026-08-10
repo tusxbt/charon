@@ -99,9 +99,11 @@ try {
     if (unknown.length) {
       blocker('interval', `unknown: ${unknown.join(', ')} — known: ${knownIntervals().join(', ')}`);
     } else {
-      line('ok', 'entry (EMA)', `${strat.entry_interval} x ${strat.min_entry_candles} bars, +/-${strat.ema_proximity_pct}%`);
-      line('ok', 'oscillator', `${strat.osc_interval} — StochRSI(${strat.stochrsi_rsi_period},${strat.stochrsi_stoch_period},${strat.stochrsi_k_smooth},${strat.stochrsi_d_smooth}) %K < ${strat.stochrsi_bottom_max}`);
-      line('ok', 'trend', `${strat.trend_interval} — Supertrend ${strat.supertrend_period}x${strat.supertrend_multiplier}`);
+      const sr = `StochRSI(${strat.stochrsi_rsi_period},${strat.stochrsi_stoch_period},${strat.stochrsi_k_smooth},${strat.stochrsi_d_smooth})`;
+      line('ok', 'entry: EMA zone', `${strat.entry_interval} x ${strat.min_entry_candles} bars, +/-${strat.ema_proximity_pct}%`);
+      line('ok', 'entry: oscillator', `${strat.entry_interval} — ${sr} %K < ${strat.stochrsi_bottom_max}`);
+      line('ok', 'entry: trend', `${strat.trend_interval} — Supertrend ${strat.supertrend_period}x${strat.supertrend_multiplier}`);
+      line('ok', 'exit: oscillator', `${strat.osc_interval} — ${sr} %K >= ${strat.exit_stochrsi_overbought}`);
       if (strat.osc_interval === strat.trend_interval) {
         line('ok', 'candle requests', '2 per candidate (osc and trend share a timeframe)');
       } else {
@@ -112,10 +114,15 @@ try {
       line('ok', 'minimum token age', `${(effective / 60000).toFixed(0)} min — a token younger than this is skipped`);
       const driver = [
         [strat.min_entry_candles * intervalSeconds(strat.entry_interval) * 1000, `EMA200 on ${strat.entry_interval}`],
-        [(strat.stochrsi_rsi_period + strat.stochrsi_stoch_period + strat.stochrsi_k_smooth + strat.stochrsi_d_smooth - 2) * intervalSeconds(strat.osc_interval) * 1000, `StochRSI on ${strat.osc_interval}`],
+        [(strat.stochrsi_rsi_period + strat.stochrsi_stoch_period + strat.stochrsi_k_smooth + strat.stochrsi_d_smooth - 2) * intervalSeconds(strat.entry_interval) * 1000, `StochRSI on ${strat.entry_interval}`],
         [(strat.supertrend_period + 1) * intervalSeconds(strat.trend_interval) * 1000, `Supertrend on ${strat.trend_interval}`],
       ].sort((a, b) => b[0] - a[0])[0];
       line('ok', 'binding constraint', driver[1]);
+      const exitBars = strat.stochrsi_rsi_period + strat.stochrsi_stoch_period + strat.stochrsi_k_smooth + strat.stochrsi_d_smooth - 2;
+      const exitReadyMin = exitBars * intervalSeconds(strat.osc_interval) / 60;
+      if (exitReadyMin > effective / 60000) {
+        warn('exit lag', `the ${strat.osc_interval} StochRSI exit only works from ${exitReadyMin.toFixed(0)} min of token age — before that, TP/SL/Supertrend cover exits`);
+      }
       if (strat.entry_interval.endsWith('SECOND')) {
         warn('unverified', `${strat.entry_interval} support on datapi.jup.ag is not confirmed — test it before trading live`);
       }
