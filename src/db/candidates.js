@@ -72,7 +72,7 @@ export function latestCandidateByMint(mint) {
 }
 
 export function recentEligibleCandidates(limit = 10) {
-  const maxAgeMs = numSetting('llm_candidate_max_age_ms', 10 * 60 * 1000);
+  const maxAgeMs = numSetting('candidate_max_age_ms', 10 * 60 * 1000);
   const cutoff = now() - Math.max(30_000, maxAgeMs);
   const rows = db.prepare(`
     SELECT *

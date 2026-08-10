@@ -67,17 +67,6 @@ if (env('GMGN_ENABLED') === 'false') {
 }
 line('ok', 'Jupiter datapi', 'no key needed (candles, price, holders)');
 
-// ── LLM ──────────────────────────────────────────────────────────────────────
-console.log('\nLLM');
-const llmEnabled = env('ENABLE_LLM') !== 'false';
-if (!llmEnabled) {
-  line('off', 'ENABLE_LLM', 'false — no LLM calls, no key needed');
-} else if (has('LLM_API_KEY')) {
-  line('ok', 'LLM_API_KEY', `set (${env('LLM_MODEL') || 'MiniMax-M2.7'})`);
-} else {
-  warn('LLM_API_KEY', 'ENABLE_LLM is on but no key set — LLM strategies will return WATCH and never buy');
-}
-
 // ── Execution mode ───────────────────────────────────────────────────────────
 const mode = env('TRADING_MODE') || 'dry_run';
 console.log(`\nExecution (TRADING_MODE=${mode})`);
@@ -99,10 +88,7 @@ try {
   initDb();
   const strat = activeStrategy();
   line('ok', 'strategy', `${strat.id} (${strat.name})`);
-  line(strat.use_llm ? 'ok' : 'off', 'use_llm', strat.use_llm ? 'true — needs an LLM key' : 'false — rule based, no LLM');
-  if (strat.use_llm && !llmEnabled) {
-    warn('conflict', `strategy ${strat.id} wants the LLM but ENABLE_LLM=false — it will never buy`);
-  }
+  line('ok', 'entry', 'rule based — a candidate that passes every filter is bought');
   line('ok', 'position size', `${strat.position_size_sol} SOL, max ${strat.max_open_positions} open`);
   line('ok', 'TP / SL', `${strat.tp_percent}% / ${strat.sl_percent}%`);
 

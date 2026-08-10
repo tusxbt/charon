@@ -3,14 +3,15 @@ import { now, formatWindow, parseWindowMs } from '../utils.js';
 import { escapeHtml } from '../format.js';
 import { db } from '../db/connection.js';
 import { summarizeLearningWindow } from './summary.js';
-import { generateLessons, storeLearningRun } from './lessons.js';
+import { deriveLessons, storeLearningRun } from './lessons.js';
 import { learningReportText } from './report.js';
 
 export async function runLearning(chatId, windowArg = '12h') {
   const windowMs = parseWindowMs(windowArg);
   await bot.sendMessage(chatId, `Learning from the last ${formatWindow(windowMs)}...`);
   const summary = summarizeLearningWindow(windowMs);
-  const { lessons, raw } = await generateLessons(summary);
+  const lessons = deriveLessons(summary);
+  const raw = { source: 'rule_based' };
   const runId = storeLearningRun(windowMs, summary, lessons, raw);
   return bot.sendMessage(chatId, learningReportText(runId, summary, lessons), {
     parse_mode: 'HTML',

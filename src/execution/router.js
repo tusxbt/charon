@@ -15,7 +15,7 @@ import { sendPositionOpen, sendTelegram } from '../telegram/send.js';
 import { updateCandidateStatus } from '../db/candidates.js';
 import { createTradeIntent } from '../db/intents.js';
 
-export async function executeLiveBuy(selectedRow, decision, batchId, rows = [], triggerCandidateId = null) {
+export async function executeLiveBuy(selectedRow, decision, rows = [], triggerCandidateId = null) {
   const strat = activeStrategy();
   const amountLamports = Math.floor((strat.position_size_sol ?? numSetting('dry_run_buy_sol', 0.1)) * 1_000_000_000);
   const balance = await liveWalletBalanceLamports();
@@ -30,9 +30,8 @@ export async function executeLiveBuy(selectedRow, decision, batchId, rows = [], 
   if (!swap.outputAmount) {
     swap.outputAmount = await fetchLiveTokenBalance(selectedRow.candidate.token.mint) || swap.outputAmount;
   }
-  const positionId = createLivePosition(selectedRow.id, selectedRow.candidate, decision, swap, `live_batch_${batchId}`);
+  const positionId = createLivePosition(selectedRow.id, selectedRow.candidate, decision, swap, 'rule_entry');
   logDecisionEvent({
-    batchId,
     triggerCandidateId,
     selectedRow,
     rows,
@@ -95,8 +94,7 @@ export async function executeConfirmedIntent(chatId, intentId) {
     const positionId = createLivePosition(intent.candidate_id, freshRow.candidate, decision, swap, `confirmed_intent_${intentId}`);
     db.prepare('UPDATE trade_intents SET status = ?, updated_at_ms = ? WHERE id = ?').run('executed_live', now(), intentId);
     logDecisionEvent({
-      batchId: null,
-      triggerCandidateId: intent.candidate_id,
+        triggerCandidateId: intent.candidate_id,
       selectedRow: freshRow,
       rows: [],
       decision,

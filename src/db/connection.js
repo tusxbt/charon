@@ -47,19 +47,6 @@ export function initDb() {
       risks_json TEXT NOT NULL,
       raw_json TEXT NOT NULL
     );
-    CREATE TABLE IF NOT EXISTS llm_batches (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      created_at_ms INTEGER NOT NULL,
-      trigger_candidate_id INTEGER,
-      selected_candidate_id INTEGER,
-      selected_mint TEXT,
-      verdict TEXT NOT NULL,
-      confidence REAL NOT NULL,
-      reason TEXT,
-      risks_json TEXT NOT NULL,
-      raw_json TEXT NOT NULL,
-      candidate_ids_json TEXT NOT NULL
-    );
     CREATE TABLE IF NOT EXISTS dry_run_positions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       candidate_id INTEGER,
@@ -224,9 +211,7 @@ export function initDb() {
   const defaults = {
     agent_enabled: 'true',
     trading_mode: process.env.TRADING_MODE || 'dry_run',
-    llm_candidate_pick_count: process.env.LLM_CANDIDATE_PICK_COUNT || '10',
-    llm_candidate_max_age_ms: process.env.LLM_CANDIDATE_MAX_AGE_MS || String(10 * 60 * 1000),
-    llm_min_confidence: '75',
+    candidate_max_age_ms: process.env.CANDIDATE_MAX_AGE_MS || String(10 * 60 * 1000),
     max_open_positions: process.env.MAX_OPEN_POSITIONS || '3',
     dry_run_buy_sol: '0.1',
     default_tp_percent: '50',
@@ -288,8 +273,6 @@ export function initDb() {
     partial_tp_at_percent: 0,
     partial_tp_sell_percent: 0,
     max_hold_ms: 0,
-    use_llm: true,
-    llm_min_confidence: 50,
   }), ts);
 
   // Multi-timeframe indicator strategy: EMA cluster on 15s, RSI/Stochastic on
@@ -355,8 +338,6 @@ export function initDb() {
     partial_tp_at_percent: 0,
     partial_tp_sell_percent: 0,
     max_hold_ms: 0,
-    use_llm: false,
-    llm_min_confidence: 0,
   }), ts);
 
   stratInsert.run('dip_buy', 'Dip Buy', 0, JSON.stringify({
@@ -387,8 +368,6 @@ export function initDb() {
     partial_tp_at_percent: 0,
     partial_tp_sell_percent: 0,
     max_hold_ms: 0,
-    use_llm: true,
-    llm_min_confidence: 60,
   }), ts);
 
   stratInsert.run('smart_money', 'Smart Money', 0, JSON.stringify({
@@ -419,8 +398,6 @@ export function initDb() {
     partial_tp_at_percent: 100,
     partial_tp_sell_percent: 50,
     max_hold_ms: 0,
-    use_llm: true,
-    llm_min_confidence: 70,
   }), ts);
 
   stratInsert.run('degen', 'Degen', 0, JSON.stringify({
@@ -451,8 +428,6 @@ export function initDb() {
     partial_tp_at_percent: 0,
     partial_tp_sell_percent: 0,
     max_hold_ms: 0,
-    use_llm: false,
-    llm_min_confidence: 0,
   }), ts);
 }
 

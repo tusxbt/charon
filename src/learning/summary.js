@@ -31,12 +31,6 @@ export function summarizeLearningWindow(windowMs) {
     row.pnlSol += Number(position.pnl_sol || 0);
     byRoute.set(route, row);
   }
-  const batches = db.prepare(`
-    SELECT verdict, COUNT(*) AS count, AVG(confidence) AS avg_confidence
-    FROM llm_batches
-    WHERE created_at_ms >= ?
-    GROUP BY verdict
-  `).all(cutoff);
   const actions = db.prepare(`
     SELECT action, COUNT(*) AS count
     FROM decision_logs
@@ -84,6 +78,6 @@ export function summarizeLearningWindow(windowMs) {
       best,
       worst,
     },
-    llm: { batches, actions },
+    actions,
   };
 }

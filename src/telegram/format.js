@@ -60,7 +60,7 @@ export function candidateSummary(candidate, decision = null) {
     ].join(' · ') : null,
     candidate.feeClaim ? `Fee claim: <b>${fmtSol(candidate.feeClaim.distributedSol)} SOL</b>` : null,
     candidate.twitterNarrative?.text ? `Narrative: ${escapeHtml(candidate.twitterNarrative.text.slice(0, 220))}` : null,
-    decision ? `LLM: <b>${escapeHtml(decision.verdict)}</b> ${fmtPct(decision.confidence)} — ${escapeHtml(decision.reason || '')}` : null,
+    decision ? `Decision: <b>${escapeHtml(decision.verdict)}</b> — ${escapeHtml(decision.reason || '')}` : null,
     candidate.filters.passed ? null : `Filtered: ${escapeHtml(candidate.filters.failures.join('; '))}`,
   ];
   return lines.filter(Boolean).join('\n');
@@ -79,21 +79,6 @@ export function compactCandidateLine(row, index = null) {
     `liq ${fmtUsd(candidate.metrics?.liquidityUsd)}`,
     candidate.feeClaim ? `fee ${fmtSol(candidate.feeClaim.distributedSol)} SOL` : null,
   ].filter(Boolean).join(' · ');
-}
-
-export function batchRevealSummary(batchId, rows, decision, triggerCandidateId = null) {
-  const selected = rows.find(row => row.id === Number(decision.selected_candidate_id));
-  const trigger = rows.find(row => row.id === Number(triggerCandidateId));
-  const lines = [
-    '🧭 <b>Charon Screening</b>',
-    '',
-    `Batch: <b>#${batchId}</b> · Screened: <b>${rows.length}</b>`,
-    trigger ? `Trigger: ${compactCandidateLine(trigger)}` : null,
-    selected ? `Pick: ${compactCandidateLine(selected)}` : 'Pick: <b>none</b>',
-    `Decision: <b>${escapeHtml(decision.verdict || 'WATCH')}</b> ${fmtPct(decision.confidence || 0)}`,
-    decision.reason ? `Reason: ${escapeHtml(String(decision.reason).slice(0, 420))}` : null,
-  ];
-  return lines.filter(Boolean).join('\n');
 }
 
 export function formatPosition(position) {

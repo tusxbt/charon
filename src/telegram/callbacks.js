@@ -18,7 +18,7 @@ import {
   strategyMenuText,
   strategyKeyboard,
 } from './menus.js';
-import { sendTelegram, sendBatch, sendPositionOpen, sendTradeIntent } from './send.js';
+import { sendTelegram, sendPositionOpen, sendTradeIntent } from './send.js';
 import { candidateSummary } from './format.js';
 import { candidateById, updateCandidateStatus } from '../db/candidates.js';
 import { storeDecision, logDecisionEvent } from '../db/decisions.js';
@@ -88,7 +88,6 @@ export async function handleCallback(query) {
   const [kind, id, value] = data.split(':');
   if (kind === 'input') return requestNumericFilterInput(query, id);
   if (kind === 'set') return updateSettingFromButton(query, id, value);
-  if (kind === 'batch') return sendBatch(chatId, Number(id));
   if (kind === 'intent') {
     if (value === 'confirm') return executeConfirmedIntent(chatId, Number(id));
     if (value === 'reject') return rejectIntent(chatId, Number(id));
@@ -109,12 +108,11 @@ export async function handleCallback(query) {
     const decisionId = storeDecision(row.id, candidate, decision);
     decision.id = decisionId;
     if (tradingMode() === 'live') {
-      await executeLiveBuy(row, decision, 'manual', [row], row.id);
+      await executeLiveBuy(row, decision, [row], row.id);
       return;
     }
     const positionId = await createDryRunPosition(row.id, candidate, decision, 'manual_buy');
     logDecisionEvent({
-      batchId: 'manual',
       triggerCandidateId: row.id,
       selectedRow: row,
       rows: [row],
@@ -176,7 +174,6 @@ const STRAT_PRESETS = {
   trailing_percent: [10, 15, 20, 25, 30],
   min_source_count: [1, 2, 3, 4],
   min_holders: [0, 100, 500, 1000, 2000, 5000],
-  llm_min_confidence: [0, 30, 50, 60, 70, 80, 90],
   partial_tp_at_percent: [25, 50, 75, 100, 150, 200],
   partial_tp_sell_percent: [25, 33, 50, 75],
   max_hold_ms: [0, 1800000, 3600000, 7200000, 14400000, 28800000, 86400000],
@@ -203,7 +200,7 @@ async function handleStratConfig(query, chatId, key) {
   delete newConfig.name;
 
   // Boolean toggles
-  const boolKeys = new Set(['trailing_enabled', 'partial_tp', 'use_llm', 'require_fee_claim']);
+  const boolKeys = new Set(['trailing_enabled', 'partial_tp', 'require_fee_claim', 'use_indicators', 'require_price_above_ema200', 'require_trend_supertrend_bull', 'require_stoch_cross_up', 'exit_on_supertrend_flip', 'exit_on_ema_death_cross']);
   if (boolKeys.has(key)) {
     newConfig[key] = !strat[key];
     updateStrategyConfig(strat.id, newConfig);
@@ -246,9 +243,7 @@ async function updateSettingFromButton(query, key, value) {
     'trending_max_rug_ratio',
     'trending_max_bundler_rate',
     'trading_mode',
-    'llm_min_confidence',
-    'llm_candidate_pick_count',
-    'llm_candidate_max_age_ms',
+    'candidate_max_age_ms',
     'max_open_positions',
     'dry_run_buy_sol',
     'default_tp_percent',
@@ -258,10 +253,10 @@ async function updateSettingFromButton(query, key, value) {
   ]);
   if (!valid.has(key) || value == null) return bot.sendMessage(chatId, 'Unknown setting.');
   setSetting(key, value);
-  const text = key.startsWith('default_') || key === 'dry_run_buy_sol' || key === 'trading_mode' || key === 'llm_min_confidence' || key === 'llm_candidate_pick_count' || key === 'llm_candidate_max_age_ms' || key === 'max_open_positions'
+  const text = key.startsWith('default_') || key === 'dry_run_buy_sol' || key === 'trading_mode' || key === 'candidate_max_age_ms' || key === 'max_open_positions'
     ? agentText()
     : filtersText();
-  const extra = key.startsWith('default_') || key === 'dry_run_buy_sol' || key === 'trading_mode' || key === 'llm_min_confidence' || key === 'llm_candidate_pick_count' || key === 'llm_candidate_max_age_ms' || key === 'max_open_positions'
+  const extra = key.startsWith('default_') || key === 'dry_run_buy_sol' || key === 'trading_mode' || key === 'candidate_max_age_ms' || key === 'max_open_positions'
     ? agentKeyboard()
     : filtersKeyboard();
   return editMenuMessage(query, text, extra);
