@@ -3,7 +3,9 @@ import { TELEGRAM_CHAT_ID } from '../config.js';
 import { now, json } from '../utils.js';
 import { escapeHtml, fmtPct } from '../format.js';
 import { db } from '../db/connection.js';
-import { numSetting, boolSetting, setSetting, activeStrategy, setActiveStrategy, strategyById, updateStrategyConfig } from '../db/settings.js';
+import { numSetting, boolSetting, setSetting, activeStrategy, setActiveStrategy, strategyById, allStrategies, updateStrategyConfig } from '../db/settings.js';
+import { knownIntervals } from '../indicators/intervals.js';
+import { isAuthorizedChat } from './auth.js';
 import { candidateById, latestCandidateByMint, updateCandidateStatus } from '../db/candidates.js';
 import { storeDecision, logDecisionEvent } from '../db/decisions.js';
 import {
@@ -33,6 +35,13 @@ import { fetchWalletPnl } from '../enrichment/wallets.js';
 export async function handleMessage(msg) {
   const text = (msg.text || '').trim();
   const chatId = msg.chat.id;
+  // Anyone who finds the bot can message it. Without this check /stratset and
+  // /setfilter are reachable from any chat, and they rewrite the live strategy
+  // config — position size included.
+  if (!isAuthorizedChat(chatId)) {
+    console.log(`[telegram] ignored message from unauthorized chat ${chatId}`);
+    return;
+  }
   if (await consumeNumericFilterInput(chatId, text, msg.message_id)) return;
   if (!text.startsWith('/')) return;
   if (text.startsWith('/menu')) return sendMenu(chatId);
@@ -44,7 +53,10 @@ export async function handleMessage(msg) {
     if (!id) {
       return bot.sendMessage(chatId, strategyMenuText(), { parse_mode: 'HTML', ...strategyKeyboard() });
     }
-    const valid = ['sniper', 'dip_buy', 'smart_money', 'degen'];
+    // Derived from the database rather than hardcoded: a literal list here goes
+    // stale the moment a strategy is added, and the failure looks like the new
+    // strategy does not exist.
+    const valid = allStrategies().map(row => row.id);
     if (!valid.includes(id)) {
       return bot.sendMessage(chatId, `Unknown strategy. Valid: ${valid.join(', ')}`);
     }
@@ -56,19 +68,40 @@ export async function handleMessage(msg) {
     const [, id, key, ...rest] = parts;
     const value = rest.join(' ');
     if (!id || !key || !value) {
-      return bot.sendMessage(chatId, 'Usage: /stratset <strategy_id> <key> <value>\n\nExample: /stratset sniper tp_percent 75\n\nKeys: tp_percent, sl_percent, position_size_sol, max_open_positions, min_mcap_usd, max_mcap_usd, min_holders, trailing_enabled, trailing_percent, partial_tp, partial_tp_at_percent, partial_tp_sell_percent, max_hold_ms, use_llm, llm_min_confidence, min_source_count, require_fee_claim, min_fee_claim_sol, min_gmgn_total_fee_sol, max_ath_distance_pct');
+      return bot.sendMessage(chatId, 'Usage: /stratset <strategy_id> <key> <value>\n\nExample: /stratset sniper tp_percent 75\n\nKeys: tp_percent, sl_percent, position_size_sol, max_open_positions, min_mcap_usd, max_mcap_usd, min_holders, trailing_enabled, trailing_percent, partial_tp, partial_tp_at_percent, partial_tp_sell_percent, max_hold_ms, use_llm, llm_min_confidence, min_source_count, require_fee_claim, min_fee_claim_sol, min_gmgn_total_fee_sol, max_ath_distance_pct\n\nIndicator keys: use_indicators, entry_interval, osc_interval, trend_interval, min_entry_candles, ema_proximity_pct, rsi_bottom_max, stoch_bottom_max, require_trend_supertrend_bull, require_stoch_cross_up, exit_on_supertrend_flip, exit_on_ema_death_cross, exit_rsi_overbought, token_age_min_ms');
     }
     const strat = strategyById(id);
     if (!strat) return bot.sendMessage(chatId, `Strategy "${id}" not found.`);
-    const numKeys = new Set(['tp_percent', 'sl_percent', 'position_size_sol', 'max_open_positions', 'min_mcap_usd', 'max_mcap_usd', 'min_holders', 'max_top20_holder_percent', 'trailing_percent', 'partial_tp_at_percent', 'partial_tp_sell_percent', 'max_hold_ms', 'llm_min_confidence', 'min_source_count', 'min_fee_claim_sol', 'min_gmgn_total_fee_sol', 'max_ath_distance_pct', 'token_age_max_ms', 'trending_min_volume_usd', 'trending_min_swaps', 'trending_max_rug_ratio', 'trending_max_bundler_rate', 'min_saved_wallet_holders', 'min_graduated_volume_usd']);
-    const boolKeys = new Set(['trailing_enabled', 'partial_tp', 'use_llm', 'require_fee_claim']);
+    const numKeys = new Set(['tp_percent', 'sl_percent', 'position_size_sol', 'max_open_positions', 'min_mcap_usd', 'max_mcap_usd', 'min_holders', 'max_top20_holder_percent', 'trailing_percent', 'partial_tp_at_percent', 'partial_tp_sell_percent', 'max_hold_ms', 'llm_min_confidence', 'min_source_count', 'min_fee_claim_sol', 'min_gmgn_total_fee_sol', 'max_ath_distance_pct', 'token_age_max_ms', 'token_age_min_ms', 'trending_min_volume_usd', 'trending_min_swaps', 'trending_max_rug_ratio', 'trending_max_bundler_rate', 'min_saved_wallet_holders', 'min_graduated_volume_usd',
+      'entry_candles', 'min_entry_candles', 'osc_candles', 'trend_candles', 'ema_proximity_pct', 'rsi_period', 'stoch_k_period', 'stoch_k_smooth', 'stoch_d_period', 'supertrend_period', 'supertrend_multiplier', 'rsi_bottom_max', 'stoch_bottom_max', 'exit_rsi_overbought']);
+    const boolKeys = new Set(['trailing_enabled', 'partial_tp', 'use_llm', 'require_fee_claim',
+      'use_indicators', 'require_price_above_ema200', 'require_trend_supertrend_bull', 'require_stoch_cross_up', 'exit_on_supertrend_flip', 'exit_on_ema_death_cross']);
+    const intervalKeys = new Set(['entry_interval', 'osc_interval', 'trend_interval']);
     const newConfig = { ...strat };
     delete newConfig.id;
     delete newConfig.name;
     if (numKeys.has(key)) {
-      newConfig[key] = Number(value);
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) return bot.sendMessage(chatId, `${key} must be a number, got "${value}".`);
+      newConfig[key] = parsed;
     } else if (boolKeys.has(key)) {
-      newConfig[key] = value === 'true' || value === '1' || value === 'yes';
+      // Without this branch a boolean key falls through to the string case
+      // below, and the string "false" is truthy — so switching a guard off
+      // would silently leave it on.
+      const truthy = ['true', '1', 'yes', 'on'];
+      const falsy = ['false', '0', 'no', 'off'];
+      const normalized = String(value).toLowerCase();
+      if (![...truthy, ...falsy].includes(normalized)) {
+        return bot.sendMessage(chatId, `${key} must be true or false, got "${value}".`);
+      }
+      newConfig[key] = truthy.includes(normalized);
+    } else if (intervalKeys.has(key)) {
+      // A typo here does not error at runtime, it just makes the strategy stop
+      // producing candidates, so reject unknown intervals up front.
+      if (!knownIntervals().includes(value)) {
+        return bot.sendMessage(chatId, `Unknown interval "${value}". Valid: ${knownIntervals().join(', ')}`);
+      }
+      newConfig[key] = value;
     } else {
       newConfig[key] = value;
     }

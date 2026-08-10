@@ -1,5 +1,6 @@
 import { bot } from './bot.js';
 import { TELEGRAM_CHAT_ID } from '../config.js';
+import { isAuthorizedChat } from './auth.js';
 import { now } from '../utils.js';
 import { numSetting, boolSetting, setSetting, setActiveStrategy, activeStrategy, updateStrategyConfig } from '../db/settings.js';
 import {
@@ -29,6 +30,12 @@ import { requestNumericFilterInput, requestStrategyNumericInput } from './input.
 export async function handleCallback(query) {
   const data = query.data || '';
   const chatId = query.message?.chat?.id || TELEGRAM_CHAT_ID;
+  // In confirm mode a callback approves a real swap, so this surface is
+  // checked the same way as the command surface.
+  if (!isAuthorizedChat(chatId)) {
+    console.log(`[telegram] ignored callback from unauthorized chat ${chatId}`);
+    return null;
+  }
   await answerCallback(query);
   if (!data.startsWith('input:') && !data.startsWith('stratinput:')) {
     const { pendingNumericInputs } = await import('./input.js');
