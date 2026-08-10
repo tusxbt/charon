@@ -1,12 +1,13 @@
 // Pure entry/exit rules for the multi-timeframe indicator setup:
 //   entry TF (15s default) — price sitting in the EMA 50/100/200 zone
-//   osc TF   (5m  default) — RSI and Stochastic at the bottom
+//   osc TF   (5m  default) — Stochastic RSI at the bottom
 //   trend TF (15m default) — Supertrend bullish
 //
 // Failure strings mirror the style of candidateBuilder.filterCandidate so both
 // filter layers read the same way in logs and Telegram messages.
 
 import { intervalSeconds } from './intervals.js';
+import { stochRsiBars } from './compute.js';
 
 export const DEFAULT_SETUP_CONFIG = {
   entry_interval: '15_SECOND',
@@ -26,21 +27,21 @@ export const DEFAULT_SETUP_CONFIG = {
 
   require_trend_supertrend_bull: true,
 
-  rsi_period: 14,
-  stoch_k_period: 14,
-  stoch_k_smooth: 3,
-  stoch_d_period: 3,
+  // Stochastic RSI (rsi, stoch, %K, %D) = 14, 14, 3, 3
+  stochrsi_rsi_period: 14,
+  stochrsi_stoch_period: 14,
+  stochrsi_k_smooth: 3,
+  stochrsi_d_smooth: 3,
   supertrend_period: 10,
   supertrend_multiplier: 3,
 
-  rsi_bottom_max: 35,
-  stoch_bottom_max: 20,
-  require_stoch_cross_up: false,
+  stochrsi_bottom_max: 20,
+  require_stochrsi_cross_up: false,
 
   // Exits
   exit_on_supertrend_flip: true,
   exit_on_ema_death_cross: true,
-  exit_rsi_overbought: 80,
+  exit_stochrsi_overbought: 80,
 };
 
 /**
@@ -56,7 +57,14 @@ export function minimumHistoryMs(config = {}) {
   const cfg = { ...DEFAULT_SETUP_CONFIG, ...config };
   const needs = [
     [cfg.min_entry_candles, cfg.entry_interval],
-    [Math.max(cfg.rsi_period + 1, cfg.stoch_k_period + cfg.stoch_k_smooth + cfg.stoch_d_period), cfg.osc_interval],
+    // StochRSI stacks two lookbacks plus two smoothings, so it warms up far
+    // later than a plain RSI would — 32 bars with the default 14/14/3/3.
+    [stochRsiBars({
+      rsiPeriod: cfg.stochrsi_rsi_period,
+      stochPeriod: cfg.stochrsi_stoch_period,
+      kSmooth: cfg.stochrsi_k_smooth,
+      dSmooth: cfg.stochrsi_d_smooth,
+    }), cfg.osc_interval],
     // ATR seeds at `period` bars and a direction needs the bar after it.
     [cfg.supertrend_period + 1, cfg.trend_interval],
   ];
@@ -135,21 +143,20 @@ export function evaluateIndicatorSetup(context, config = {}) {
     }
   }
 
-  // ── Oscillators at the bottom, on their own timeframe ─────────────────────
+  // ── Stochastic RSI at the bottom, on its own timeframe ────────────────────
   details.rsi = osc?.rsi ?? null;
-  details.stochK = osc?.stochK ?? null;
-  details.stochD = osc?.stochD ?? null;
+  details.stochRsiK = osc?.stochRsiK ?? null;
+  details.stochRsiD = osc?.stochRsiD ?? null;
   if (!osc) {
-    failures.push(`oscillators ${cfg.osc_interval}: unavailable`);
+    failures.push(`StochRSI ${cfg.osc_interval}: unavailable`);
+  } else if (osc.stochRsiK === null) {
+    failures.push(`StochRSI ${cfg.osc_interval}: unavailable (${osc.candles} candles)`);
   } else {
-    if (osc.rsi === null) failures.push(`RSI ${cfg.osc_interval}: unavailable (${osc.candles} candles)`);
-    else if (osc.rsi > cfg.rsi_bottom_max) failures.push(`RSI ${cfg.osc_interval}: ${osc.rsi.toFixed(1)} > ${cfg.rsi_bottom_max}`);
-
-    if (osc.stochK === null) failures.push(`Stoch ${cfg.osc_interval}: unavailable (${osc.candles} candles)`);
-    else if (osc.stochK > cfg.stoch_bottom_max) failures.push(`Stoch %K ${cfg.osc_interval}: ${osc.stochK.toFixed(1)} > ${cfg.stoch_bottom_max}`);
-
-    if (cfg.require_stoch_cross_up && !osc.stochCrossUp) {
-      failures.push(`Stoch ${cfg.osc_interval}: no %K/%D cross up on the last bar`);
+    if (osc.stochRsiK > cfg.stochrsi_bottom_max) {
+      failures.push(`StochRSI %K ${cfg.osc_interval}: ${osc.stochRsiK.toFixed(1)} > ${cfg.stochrsi_bottom_max}`);
+    }
+    if (cfg.require_stochrsi_cross_up && !osc.stochRsiCrossUp) {
+      failures.push(`StochRSI ${cfg.osc_interval}: no %K/%D cross up on the last bar`);
     }
   }
 
@@ -168,9 +175,9 @@ export function evaluateIndicatorExit(context, config = {}) {
 
   if (cfg.exit_on_supertrend_flip && trend?.supertrendFlippedDown) return 'ST_FLIP';
   if (cfg.exit_on_ema_death_cross && entry?.emaDeathCross) return 'EMA_CROSS';
-  if (cfg.exit_rsi_overbought > 0 && osc?.rsi !== null && osc?.rsi !== undefined
-    && osc.rsi >= cfg.exit_rsi_overbought && osc.stochCrossDown) {
-    return 'RSI_EXIT';
+  if (cfg.exit_stochrsi_overbought > 0 && osc?.stochRsiK !== null && osc?.stochRsiK !== undefined
+    && osc.stochRsiK >= cfg.exit_stochrsi_overbought && osc.stochRsiCrossDown) {
+    return 'STOCHRSI_EXIT';
   }
   return null;
 }

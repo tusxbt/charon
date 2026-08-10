@@ -32,10 +32,10 @@ export async function buildIndicatorContext(mint, config = {}) {
     entry: indicatorSnapshot(entryCandles, { ema_periods: [50, 100, 200] }),
     osc: oscCandles.length
       ? indicatorSnapshot(oscCandles, {
-          rsi_period: cfg.rsi_period,
-          stoch_k_period: cfg.stoch_k_period,
-          stoch_k_smooth: cfg.stoch_k_smooth,
-          stoch_d_period: cfg.stoch_d_period,
+          stochrsi_rsi_period: cfg.stochrsi_rsi_period,
+          stochrsi_stoch_period: cfg.stochrsi_stoch_period,
+          stochrsi_k_smooth: cfg.stochrsi_k_smooth,
+          stochrsi_d_smooth: cfg.stochrsi_d_smooth,
         })
       : null,
     trend: trendCandles.length
@@ -65,8 +65,8 @@ export function compactIndicators(context, setup = null) {
     ema100: context.entry?.ema100 ?? null,
     ema200: context.entry?.ema200 ?? null,
     rsi: context.osc?.rsi ?? null,
-    stochK: context.osc?.stochK ?? null,
-    stochD: context.osc?.stochD ?? null,
+    stochRsiK: context.osc?.stochRsiK ?? null,
+    stochRsiD: context.osc?.stochRsiD ?? null,
     supertrendDirection: context.trend?.supertrendDirection ?? null,
     setupPassed: setup?.passed ?? null,
     setupFailures: setup?.failures ?? [],

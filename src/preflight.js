@@ -100,7 +100,7 @@ try {
       blocker('interval', `unknown: ${unknown.join(', ')} — known: ${knownIntervals().join(', ')}`);
     } else {
       line('ok', 'entry (EMA)', `${strat.entry_interval} x ${strat.min_entry_candles} bars, +/-${strat.ema_proximity_pct}%`);
-      line('ok', 'oscillators', `${strat.osc_interval} — RSI < ${strat.rsi_bottom_max}, Stoch %K < ${strat.stoch_bottom_max}`);
+      line('ok', 'oscillator', `${strat.osc_interval} — StochRSI(${strat.stochrsi_rsi_period},${strat.stochrsi_stoch_period},${strat.stochrsi_k_smooth},${strat.stochrsi_d_smooth}) %K < ${strat.stochrsi_bottom_max}`);
       line('ok', 'trend', `${strat.trend_interval} — Supertrend ${strat.supertrend_period}x${strat.supertrend_multiplier}`);
       if (strat.osc_interval === strat.trend_interval) {
         line('ok', 'candle requests', '2 per candidate (osc and trend share a timeframe)');
@@ -112,7 +112,7 @@ try {
       line('ok', 'minimum token age', `${(effective / 60000).toFixed(0)} min — a token younger than this is skipped`);
       const driver = [
         [strat.min_entry_candles * intervalSeconds(strat.entry_interval) * 1000, `EMA200 on ${strat.entry_interval}`],
-        [Math.max(strat.rsi_period + 1, strat.stoch_k_period + strat.stoch_k_smooth + strat.stoch_d_period) * intervalSeconds(strat.osc_interval) * 1000, `Stochastic on ${strat.osc_interval}`],
+        [(strat.stochrsi_rsi_period + strat.stochrsi_stoch_period + strat.stochrsi_k_smooth + strat.stochrsi_d_smooth - 2) * intervalSeconds(strat.osc_interval) * 1000, `StochRSI on ${strat.osc_interval}`],
         [(strat.supertrend_period + 1) * intervalSeconds(strat.trend_interval) * 1000, `Supertrend on ${strat.trend_interval}`],
       ].sort((a, b) => b[0] - a[0])[0];
       line('ok', 'binding constraint', driver[1]);

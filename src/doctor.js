@@ -98,7 +98,7 @@ if (!strat.use_indicators) {
         fail(`${interval}: accepted but returned 0 candles`);
         continue;
       }
-      const need = interval === strat.entry_interval ? strat.min_entry_candles : 20;
+      const need = interval === strat.entry_interval ? strat.min_entry_candles : 32;
       if (candles.length < need) {
         fail(`${interval}: only ${candles.length} candles, need ${need} for this token`);
       } else {
@@ -110,10 +110,10 @@ if (!strat.use_indicators) {
       }
       if (interval === strat.osc_interval) {
         const snap = indicatorSnapshot(candles, {
-          rsi_period: strat.rsi_period, stoch_k_period: strat.stoch_k_period,
+          stochrsi_rsi_period: strat.stochrsi_rsi_period, stochrsi_stoch_period: strat.stochrsi_stoch_period,
           supertrend_period: strat.supertrend_period, supertrend_multiplier: strat.supertrend_multiplier,
         });
-        info(`RSI ${snap.rsi?.toFixed(1) ?? 'null'} / Stoch %K ${snap.stochK?.toFixed(1) ?? 'null'} / Supertrend ${snap.supertrendDirection ?? 'null'}`);
+        info(`RSI ${snap.rsi?.toFixed(1) ?? 'null'} / StochRSI %K ${snap.stochRsiK?.toFixed(1) ?? 'null'} / Supertrend ${snap.supertrendDirection ?? 'null'}`);
       }
     } catch (err) {
       const status = err.response?.status;

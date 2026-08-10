@@ -68,14 +68,14 @@ export async function handleMessage(msg) {
     const [, id, key, ...rest] = parts;
     const value = rest.join(' ');
     if (!id || !key || !value) {
-      return bot.sendMessage(chatId, 'Usage: /stratset <strategy_id> <key> <value>\n\nExample: /stratset sniper tp_percent 75\n\nKeys: tp_percent, sl_percent, position_size_sol, max_open_positions, min_mcap_usd, max_mcap_usd, min_holders, trailing_enabled, trailing_percent, partial_tp, partial_tp_at_percent, partial_tp_sell_percent, max_hold_ms, min_source_count, require_fee_claim, min_fee_claim_sol, min_gmgn_total_fee_sol, max_ath_distance_pct\n\nIndicator keys: use_indicators, entry_interval, osc_interval, trend_interval, min_entry_candles, ema_proximity_pct, rsi_bottom_max, stoch_bottom_max, require_trend_supertrend_bull, require_stoch_cross_up, exit_on_supertrend_flip, exit_on_ema_death_cross, exit_rsi_overbought, token_age_min_ms');
+      return bot.sendMessage(chatId, 'Usage: /stratset <strategy_id> <key> <value>\n\nExample: /stratset sniper tp_percent 75\n\nKeys: tp_percent, sl_percent, position_size_sol, max_open_positions, min_mcap_usd, max_mcap_usd, min_holders, trailing_enabled, trailing_percent, partial_tp, partial_tp_at_percent, partial_tp_sell_percent, max_hold_ms, min_source_count, require_fee_claim, min_fee_claim_sol, min_gmgn_total_fee_sol, max_ath_distance_pct\n\nIndicator keys: use_indicators, entry_interval, osc_interval, trend_interval, min_entry_candles, ema_proximity_pct, stochrsi_bottom_max, require_trend_supertrend_bull, require_stochrsi_cross_up, exit_on_supertrend_flip, exit_on_ema_death_cross, exit_stochrsi_overbought, token_age_min_ms');
     }
     const strat = strategyById(id);
     if (!strat) return bot.sendMessage(chatId, `Strategy "${id}" not found.`);
     const numKeys = new Set(['tp_percent', 'sl_percent', 'position_size_sol', 'max_open_positions', 'min_mcap_usd', 'max_mcap_usd', 'min_holders', 'max_top20_holder_percent', 'trailing_percent', 'partial_tp_at_percent', 'partial_tp_sell_percent', 'max_hold_ms', 'min_source_count', 'min_fee_claim_sol', 'min_gmgn_total_fee_sol', 'max_ath_distance_pct', 'token_age_max_ms', 'token_age_min_ms', 'trending_min_volume_usd', 'trending_min_swaps', 'trending_max_rug_ratio', 'trending_max_bundler_rate', 'min_saved_wallet_holders', 'min_graduated_volume_usd',
-      'entry_candles', 'min_entry_candles', 'osc_candles', 'trend_candles', 'ema_proximity_pct', 'rsi_period', 'stoch_k_period', 'stoch_k_smooth', 'stoch_d_period', 'supertrend_period', 'supertrend_multiplier', 'rsi_bottom_max', 'stoch_bottom_max', 'exit_rsi_overbought']);
+      'entry_candles', 'min_entry_candles', 'osc_candles', 'trend_candles', 'ema_proximity_pct', 'stochrsi_rsi_period', 'stochrsi_stoch_period', 'stochrsi_k_smooth', 'stochrsi_d_smooth', 'supertrend_period', 'supertrend_multiplier', 'stochrsi_bottom_max', 'exit_stochrsi_overbought']);
     const boolKeys = new Set(['trailing_enabled', 'partial_tp', 'require_fee_claim',
-      'use_indicators', 'require_price_above_ema200', 'require_trend_supertrend_bull', 'require_stoch_cross_up', 'exit_on_supertrend_flip', 'exit_on_ema_death_cross']);
+      'use_indicators', 'require_price_above_ema200', 'require_trend_supertrend_bull', 'require_stochrsi_cross_up', 'exit_on_supertrend_flip', 'exit_on_ema_death_cross']);
     const intervalKeys = new Set(['entry_interval', 'osc_interval', 'trend_interval']);
     const newConfig = { ...strat };
     delete newConfig.id;

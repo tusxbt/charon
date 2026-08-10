@@ -281,14 +281,14 @@ export function initDb() {
   // Unlike every other strategy here it needs tokens to be OLD enough, not
   // young enough. token_age_min_ms below is only a floor — serverClient raises
   // it to whatever the configured intervals actually require (with these
-  // defaults the binding constraint is the 5m Stochastic at 20 bars, not the
-  // 200-bar EMA on 15s candles), so changing an interval cannot silently leave
+  // defaults the binding constraint is the 5m Stochastic RSI at 32 bars, not
+  // the 200-bar EMA on 15s candles), so changing an interval cannot silently leave
   // the gate too low.
   stratInsert.run('indicator_pullback', 'Indicator Pullback', 0, JSON.stringify({
     entry_mode: 'immediate',
     min_source_count: 1,
     require_fee_claim: false,
-    token_age_min_ms: 6000000,
+    token_age_min_ms: 9600000,
     token_age_max_ms: 0,
     min_mcap_usd: 15000,
     max_mcap_usd: 0,
@@ -315,18 +315,17 @@ export function initDb() {
     ema_proximity_pct: 5,
     require_price_above_ema200: false,
     require_trend_supertrend_bull: true,
-    rsi_period: 14,
-    stoch_k_period: 14,
-    stoch_k_smooth: 3,
-    stoch_d_period: 3,
+    stochrsi_rsi_period: 14,
+    stochrsi_stoch_period: 14,
+    stochrsi_k_smooth: 3,
+    stochrsi_d_smooth: 3,
     supertrend_period: 10,
     supertrend_multiplier: 3,
-    rsi_bottom_max: 35,
-    stoch_bottom_max: 20,
-    require_stoch_cross_up: false,
+    stochrsi_bottom_max: 20,
+    require_stochrsi_cross_up: false,
     exit_on_supertrend_flip: true,
     exit_on_ema_death_cross: true,
-    exit_rsi_overbought: 80,
+    exit_stochrsi_overbought: 80,
 
     position_size_sol: 0.05,
     max_open_positions: 3,

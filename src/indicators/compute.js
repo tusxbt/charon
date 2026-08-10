@@ -8,7 +8,12 @@
 // enforced when GMGN data exists), and newpair tokens spend their first minutes
 // entirely inside the warmup window.
 
+// The explicit null/undefined/'' check matters: Number(null) is 0 and
+// Number('') is 0, both of which are finite. Without it every "not warmed up
+// yet" slot reads as a real zero, and any moving average over a warming-up
+// series starts producing values long before it should.
 const num = (value) => {
+  if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 };
@@ -78,27 +83,45 @@ export function rsi(closes, period = 14) {
   return out;
 }
 
-// Slow stochastic. kPeriod = lookback, kSmooth = smoothing on raw %K,
-// dPeriod = smoothing on %K to get %D.
-export function stochastic(highs, lows, closes, { kPeriod = 14, kSmooth = 3, dPeriod = 3 } = {}) {
+/**
+ * Stochastic RSI — a stochastic applied to the RSI line, not to price.
+ *
+ * The distinction is what makes this strategy workable. Raw RSI only reaches
+ * oversold after a decline long enough to also flip Supertrend bearish on the
+ * same candles, so "Supertrend bullish AND RSI oversold" is close to
+ * unreachable. StochRSI rescales RSI against its own recent range, so a
+ * shallow pullback inside an intact uptrend reads at the bottom while the
+ * trend filter still holds.
+ *
+ * Parameters follow the usual (rsi, stoch, %K, %D) ordering — 14, 14, 3, 3.
+ */
+export function stochRsi(closes, { rsiPeriod = 14, stochPeriod = 14, kSmooth = 3, dSmooth = 3 } = {}) {
+  const rsiLine = rsi(closes, rsiPeriod);
   const raw = new Array(closes.length).fill(null);
-  for (let i = kPeriod - 1; i < closes.length; i++) {
-    let highest = -Infinity;
+  for (let i = stochPeriod - 1; i < closes.length; i++) {
     let lowest = Infinity;
-    for (let j = i - kPeriod + 1; j <= i; j++) {
-      const high = num(highs[j]);
-      const low = num(lows[j]);
-      if (high !== null && high > highest) highest = high;
-      if (low !== null && low < lowest) lowest = low;
+    let highest = -Infinity;
+    let complete = true;
+    for (let j = i - stochPeriod + 1; j <= i; j++) {
+      const value = rsiLine[j];
+      if (value === null) { complete = false; break; }
+      if (value < lowest) lowest = value;
+      if (value > highest) highest = value;
     }
-    const close = num(closes[i]);
-    if (close === null || !Number.isFinite(highest) || !Number.isFinite(lowest)) continue;
-    // A flat range means no information — 50 is the neutral reading, and it
-    // keeps a dead-liquidity token from reading as a screaming oversold buy.
-    raw[i] = highest === lowest ? 50 : (close - lowest) / (highest - lowest) * 100;
+    if (!complete) continue;
+    // A flat RSI range carries no information. 50 keeps it neutral — reading it
+    // as 0 would make a token whose RSI is pinned at 100 look maximally
+    // oversold, which is the exact opposite of the truth.
+    raw[i] = highest === lowest ? 50 : (rsiLine[i] - lowest) / (highest - lowest) * 100;
   }
   const k = kSmooth > 1 ? sma(raw, kSmooth) : raw;
-  return { k, d: sma(k, dPeriod) };
+  return { rsi: rsiLine, raw, k, d: sma(k, dSmooth) };
+}
+
+// Bars required before %D exists: RSI warms up over rsiPeriod, the stochastic
+// window then needs stochPeriod RSI values, and each smoothing costs one more.
+export function stochRsiBars({ rsiPeriod = 14, stochPeriod = 14, kSmooth = 3, dSmooth = 3 } = {}) {
+  return rsiPeriod + stochPeriod + kSmooth + dSmooth - 2;
 }
 
 export function trueRange(highs, lows, closes) {

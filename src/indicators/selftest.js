@@ -4,7 +4,7 @@
 // RSI is checked against Wilder's published worked example; the rest are
 // checked against hand-computable series and structural invariants.
 
-import { ema, sma, rsi, stochastic, atr, supertrend, crossedOver, crossedUnder } from './compute.js';
+import { ema, sma, rsi, stochRsi, stochRsiBars, atr, supertrend, crossedOver, crossedUnder } from './compute.js';
 import { indicatorSnapshot } from './snapshot.js';
 import { evaluateIndicatorSetup, evaluateIndicatorExit, minimumHistoryMs } from './entry.js';
 
@@ -43,13 +43,39 @@ check('rsi(14) first three values', [round(rsiOut[14]), round(rsiOut[15]), round
 check('rsi(14) tail', [round(rsiOut[30]), round(rsiOut[31]), round(rsiOut[32])],
   [37.30, 33.08, 37.77]);
 
-// ── Stochastic: close at the top of the range reads 100 ──────────────────────
-const rising = Array.from({ length: 30 }, (_, i) => i + 1);
-const stochRising = stochastic(rising, rising, rising, { kPeriod: 14, kSmooth: 3, dPeriod: 3 });
-check('stoch %K = 100 on a monotonic rise', round(stochRising.k[29], 6), 100);
-const flat = new Array(30).fill(5);
-const stochFlat = stochastic(flat, flat, flat, { kPeriod: 14, kSmooth: 3, dPeriod: 3 });
-check('stoch on a flat series is neutral 50, not 0/100', round(stochFlat.k[29], 6), 50);
+// ── sma must skip warmup slots, not read them as zero ────────────────────────
+// Number(null) is 0, so an sma that does not check explicitly starts emitting
+// values while the series is still warming up. That defeats the whole
+// null-means-unknown contract, and it is invisible in the final value.
+check('sma treats leading nulls as unknown, not as 0',
+  sma([null, null, 1, 2, 3], 3), [null, null, null, null, 2]);
+check('sma restarts its window after a null gap',
+  sma([1, 2, 3, null, 4, 5, 6], 3), [null, null, 2, null, null, null, 5]);
+
+// ── Stochastic RSI (14, 14, 3, 3) ────────────────────────────────────────────
+check('stochRsiBars(14,14,3,3) is 32', stochRsiBars(), 32);
+const srSeries = Array.from({ length: 40 }, (_, i) => 100 + Math.sin(i / 3) * 5 + i * 0.2);
+const sr = stochRsi(srSeries);
+check('stochRsi raw warms up only after RSI plus the stoch window',
+  sr.raw.findIndex(v => v !== null), 27);
+check('stochRsi %K warms up two bars after raw', sr.k.findIndex(v => v !== null), 29);
+check('stochRsi %D warms up exactly at stochRsiBars()',
+  sr.d.findIndex(v => v !== null) + 1, stochRsiBars());
+const srValues = sr.k.filter(v => v !== null);
+check('stochRsi %K stays within 0..100',
+  srValues.every(v => v >= 0 && v <= 100), true);
+// A monotonic rise pins RSI at 100, so its stochastic range is flat.
+const srFlat = stochRsi(Array.from({ length: 60 }, (_, i) => 100 + i));
+check('a pinned RSI reads neutral 50, never 0 (which would look oversold)',
+  round(srFlat.k[59], 6), 50);
+// The whole reason for using StochRSI here: a shallow pullback that leaves raw
+// RSI mid-range still registers at the bottom of the StochRSI range.
+const pull = [];
+let pp = 100;
+for (let i = 0; i < 100; i++) { pp += 0.8; pull.push(pp); }
+for (let i = 0; i < 5; i++) { pp -= 2; pull.push(pp); }
+check('a shallow pullback leaves raw RSI mid-range', round(rsi(pull, 14).at(-1)) > 40, true);
+check('but reads at the bottom on StochRSI', round(stochRsi(pull).k.at(-1)) < 20, true);
 
 // ── ATR: constant bar height means ATR equals that height ────────────────────
 const h = new Array(30).fill(11);
@@ -93,6 +119,7 @@ check('mature token has EMA200', mature.ema200 !== null, true);
 check('a steady rise produces a bullish EMA stack', mature.emaStackBullish, true);
 check('mature token has every indicator ready',
   Object.values(mature.ready).every(Boolean), true);
+check('mature token exposes a StochRSI reading', mature.stochRsiK !== null, true);
 check('empty candle array does not crash', indicatorSnapshot([]).candles, 0);
 
 // ── Entry rules: price in the EMA zone, trend bullish, oscillators bottomed ──
@@ -103,8 +130,8 @@ const setupContext = (overrides = {}) => ({
     ...(overrides.entry || {}),
   },
   osc: {
-    candles: 60, rsi: 28, stochK: 12, stochD: 15,
-    stochCrossUp: true, stochCrossDown: false,
+    candles: 60, rsi: 47, stochRsiK: 12, stochRsiD: 15,
+    stochRsiCrossUp: true, stochRsiCrossDown: false,
     ...(overrides.osc || {}),
   },
   trend: { candles: 60, supertrendDirection: 1, supertrend: 95, supertrendFlippedDown: false, ...(overrides.trend || {}) },
@@ -130,20 +157,20 @@ check('bearish trend supertrend fails', bear.failures.some(f => f.includes('supe
 const noTrend = evaluateIndicatorSetup({ ...setupContext(), trend: null });
 check('missing trend timeframe fails rather than passes', noTrend.passed, false);
 
-check('RSI above the bottom threshold fails',
-  evaluateIndicatorSetup(setupContext({ osc: { rsi: 62 } })).failures.some(f => f.startsWith('RSI 5_MINUTE:')), true);
-check('Stoch above the bottom threshold fails',
-  evaluateIndicatorSetup(setupContext({ osc: { stochK: 55 } })).failures.some(f => f.startsWith('Stoch %K 5_MINUTE:')), true);
-check('a null RSI fails instead of passing silently',
-  evaluateIndicatorSetup(setupContext({ osc: { rsi: null } })).passed, false);
+check('StochRSI above the bottom threshold fails',
+  evaluateIndicatorSetup(setupContext({ osc: { stochRsiK: 55 } })).failures.some(f => f.startsWith('StochRSI %K 5_MINUTE:')), true);
+check('raw RSI is not gated — only StochRSI is',
+  evaluateIndicatorSetup(setupContext({ osc: { rsi: 88 } })).passed, true);
+check('a null StochRSI fails instead of passing silently',
+  evaluateIndicatorSetup(setupContext({ osc: { stochRsiK: null } })).passed, false);
 check('a missing oscillator timeframe fails',
   evaluateIndicatorSetup({ ...setupContext(), osc: null }).passed, false);
-check('oscillators are read from the osc TF, not the entry TF',
-  evaluateIndicatorSetup(setupContext({ entry: { rsi: 95, stochK: 99 } })).passed, true);
-check('require_stoch_cross_up is off by default',
-  evaluateIndicatorSetup(setupContext({ osc: { stochCrossUp: false } })).passed, true);
-check('require_stoch_cross_up rejects when enabled',
-  evaluateIndicatorSetup(setupContext({ osc: { stochCrossUp: false } }), { require_stoch_cross_up: true }).passed, false);
+check('the oscillator is read from the osc TF, not the entry TF',
+  evaluateIndicatorSetup(setupContext({ entry: { stochRsiK: 99 } })).passed, true);
+check('require_stochrsi_cross_up is off by default',
+  evaluateIndicatorSetup(setupContext({ osc: { stochRsiCrossUp: false } })).passed, true);
+check('require_stochrsi_cross_up rejects when enabled',
+  evaluateIndicatorSetup(setupContext({ osc: { stochRsiCrossUp: false } }), { require_stochrsi_cross_up: true }).passed, false);
 check('default proximity is 5%: a 4.5% gap passes',
   evaluateIndicatorSetup(setupContext({ entry: { ema200: 104.5 } })).passed, true);
 check('default proximity is 5%: a 6% gap fails',
@@ -153,10 +180,14 @@ check('proximity tolerance is configurable down to 3%',
 
 // ── Minimum history is derived from the configured intervals ────────────────
 const MIN = 60 * 1000;
-check('default minimum history is the 5m Stochastic at 20 bars (100 min)',
-  minimumHistoryMs() / MIN, 100);
-check('a 15m Supertrend raises the floor to 165 min',
-  minimumHistoryMs({ trend_interval: '15_MINUTE' }) / MIN, 165);
+check('default minimum history is the 5m StochRSI at 32 bars (160 min)',
+  minimumHistoryMs() / MIN, 160);
+// With the oscillator on 1m the binding constraint becomes the 5m Supertrend
+// at 11 bars (55 min), not the 200-bar EMA on 15s candles (50 min).
+check('a 1m oscillator TF drops the floor to the 5m Supertrend (55 min)',
+  minimumHistoryMs({ osc_interval: '1_MINUTE' }) / MIN, 55);
+check('and with a 1m trend TF too it is the 200-bar EMA (50 min)',
+  minimumHistoryMs({ osc_interval: '1_MINUTE', trend_interval: '1_MINUTE' }) / MIN, 50);
 check('a 1m entry TF raises the floor to 200 min',
   minimumHistoryMs({ entry_interval: '1_MINUTE' }) / MIN, 200);
 check('an unknown interval throws rather than silently passing', (() => {
@@ -168,10 +199,10 @@ check('supertrend flip triggers an exit',
   evaluateIndicatorExit(setupContext({ trend: { supertrendFlippedDown: true } })), 'ST_FLIP');
 check('EMA death cross triggers an exit',
   evaluateIndicatorExit(setupContext({ entry: { emaDeathCross: true } })), 'EMA_CROSS');
-check('overbought RSI alone does not exit without a stoch cross down',
-  evaluateIndicatorExit(setupContext({ osc: { rsi: 85 } })), null);
-check('overbought RSI plus a stoch cross down exits',
-  evaluateIndicatorExit(setupContext({ osc: { rsi: 85, stochCrossDown: true } })), 'RSI_EXIT');
+check('overbought StochRSI alone does not exit without a cross down',
+  evaluateIndicatorExit(setupContext({ osc: { stochRsiK: 85 } })), null);
+check('overbought StochRSI plus a cross down exits',
+  evaluateIndicatorExit(setupContext({ osc: { stochRsiK: 85, stochRsiCrossDown: true } })), 'STOCHRSI_EXIT');
 check('a healthy position is not exited', evaluateIndicatorExit(setupContext()), null);
 check('exit rules can be switched off',
   evaluateIndicatorExit(setupContext({ trend: { supertrendFlippedDown: true } }), { exit_on_supertrend_flip: false }), null);
