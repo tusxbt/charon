@@ -60,4 +60,9 @@ export async function startCharon() {
   // Position monitoring runs in both modes
   const trackPositions = makeFailureTracker('position monitor', (msg) => sendTelegram(msg));
   setInterval(() => trackPositions(() => monitorPositions()), POSITION_CHECK_MS);
+
+  // 15-second candles accumulate fast across every screened mint; without this
+  // the candles table grows without bound.
+  const { pruneCandles } = await import('./indicators/candles.js');
+  setInterval(() => pruneCandles(), 60 * 60 * 1000);
 }

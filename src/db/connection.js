@@ -191,6 +191,18 @@ export function initDb() {
       triggered_at_ms INTEGER,
       expires_at_ms INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS candles (
+      mint TEXT NOT NULL,
+      interval TEXT NOT NULL,
+      time INTEGER NOT NULL,
+      open REAL NOT NULL,
+      high REAL NOT NULL,
+      low REAL NOT NULL,
+      close REAL NOT NULL,
+      volume REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (mint, interval, time)
+    );
+    CREATE INDEX IF NOT EXISTS idx_candles_lookup ON candles(mint, interval, time DESC);
     CREATE INDEX IF NOT EXISTS idx_alerts_status ON price_alerts(status, expires_at_ms);
     CREATE INDEX IF NOT EXISTS idx_candidates_mint ON candidates(mint);
     CREATE INDEX IF NOT EXISTS idx_positions_status ON dry_run_positions(status);
@@ -278,6 +290,61 @@ export function initDb() {
     max_hold_ms: 0,
     use_llm: true,
     llm_min_confidence: 50,
+  }), ts);
+
+  // Multi-timeframe indicator strategy. Unlike every other strategy here it
+  // needs tokens to be OLD enough, not young enough: EMA200 on 15s candles
+  // requires 200 bars = 50 minutes of history, so token_age_min_ms gates the
+  // signal before any candle is fetched and min_entry_candles enforces the
+  // real requirement once they are.
+  stratInsert.run('indicator_pullback', 'Indicator Pullback', 0, JSON.stringify({
+    entry_mode: 'immediate',
+    min_source_count: 1,
+    require_fee_claim: false,
+    token_age_min_ms: 3000000,
+    token_age_max_ms: 0,
+    min_mcap_usd: 15000,
+    max_mcap_usd: 0,
+    min_fee_claim_sol: 0,
+    min_gmgn_total_fee_sol: 0,
+    min_holders: 0,
+    max_top20_holder_percent: 60,
+    min_saved_wallet_holders: 0,
+    max_ath_distance_pct: 0,
+    min_graduated_volume_usd: 0,
+    trending_min_volume_usd: 0,
+    trending_min_swaps: 0,
+    trending_max_rug_ratio: 0.3,
+    trending_max_bundler_rate: 0.5,
+
+    use_indicators: true,
+    entry_interval: '15_SECOND',
+    entry_candles: 260,
+    min_entry_candles: 200,
+    trend_interval: '15_MINUTE',
+    trend_candles: 80,
+    ema_proximity_pct: 3,
+    require_price_above_ema200: false,
+    require_trend_supertrend_bull: true,
+    rsi_bottom_max: 35,
+    stoch_bottom_max: 20,
+    require_stoch_cross_up: false,
+    exit_on_supertrend_flip: true,
+    exit_on_ema_death_cross: true,
+    exit_rsi_overbought: 80,
+
+    position_size_sol: 0.05,
+    max_open_positions: 3,
+    tp_percent: 40,
+    sl_percent: -15,
+    trailing_enabled: true,
+    trailing_percent: 12,
+    partial_tp: false,
+    partial_tp_at_percent: 0,
+    partial_tp_sell_percent: 0,
+    max_hold_ms: 0,
+    use_llm: false,
+    llm_min_confidence: 0,
   }), ts);
 
   stratInsert.run('dip_buy', 'Dip Buy', 0, JSON.stringify({

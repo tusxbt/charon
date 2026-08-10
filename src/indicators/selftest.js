@@ -6,6 +6,7 @@
 
 import { ema, sma, rsi, stochastic, atr, supertrend, crossedOver, crossedUnder } from './compute.js';
 import { indicatorSnapshot } from './snapshot.js';
+import { evaluateIndicatorSetup, evaluateIndicatorExit } from './entry.js';
 
 let failures = 0;
 const round = (value, dp = 2) => (value === null ? null : Number(value.toFixed(dp)));
@@ -93,6 +94,63 @@ check('a steady rise produces a bullish EMA stack', mature.emaStackBullish, true
 check('mature token has every indicator ready',
   Object.values(mature.ready).every(Boolean), true);
 check('empty candle array does not crash', indicatorSnapshot([]).candles, 0);
+
+// ── Entry rules: price in the EMA zone, trend bullish, oscillators bottomed ──
+const setupContext = (overrides = {}) => ({
+  entry: {
+    candles: 260, price: 100, ema50: 100.5, ema100: 99.4, ema200: 101.2,
+    rsi: 28, stochK: 12, stochD: 15, stochCrossUp: true, stochCrossDown: false,
+    emaDeathCross: false, warmup: false,
+    ...(overrides.entry || {}),
+  },
+  trend: { candles: 80, supertrendDirection: 1, supertrend: 95, supertrendFlippedDown: false, ...(overrides.trend || {}) },
+});
+
+const good = evaluateIndicatorSetup(setupContext());
+check('a complete setup passes', good.passed, true);
+check('a complete setup reports no failures', good.failures, []);
+
+const young = evaluateIndicatorSetup(setupContext({ entry: { candles: 120 } }));
+check('under 200 candles fails', young.passed, false);
+check('under 200 candles fails only on history, not on every rule', young.failures.length, 1);
+check('under 200 candles reports the shortfall', young.details.barsNeeded, 80);
+
+const far = evaluateIndicatorSetup(setupContext({ entry: { ema200: 140 } }));
+check('price outside the EMA zone fails', far.passed, false);
+check('the failure names the EMA that is too far',
+  far.failures.some(f => f.startsWith('ema200 proximity')), true);
+
+const bear = evaluateIndicatorSetup(setupContext({ trend: { supertrendDirection: -1 } }));
+check('bearish trend supertrend fails', bear.failures.some(f => f.includes('supertrend')), true);
+
+const noTrend = evaluateIndicatorSetup({ ...setupContext(), trend: null });
+check('missing trend timeframe fails rather than passes', noTrend.passed, false);
+
+check('RSI above the bottom threshold fails',
+  evaluateIndicatorSetup(setupContext({ entry: { rsi: 62 } })).failures.some(f => f.startsWith('RSI:')), true);
+check('Stoch above the bottom threshold fails',
+  evaluateIndicatorSetup(setupContext({ entry: { stochK: 55 } })).failures.some(f => f.startsWith('Stoch %K:')), true);
+check('a null RSI fails instead of passing silently',
+  evaluateIndicatorSetup(setupContext({ entry: { rsi: null } })).passed, false);
+check('require_stoch_cross_up is off by default',
+  evaluateIndicatorSetup(setupContext({ entry: { stochCrossUp: false } })).passed, true);
+check('require_stoch_cross_up rejects when enabled',
+  evaluateIndicatorSetup(setupContext({ entry: { stochCrossUp: false } }), { require_stoch_cross_up: true }).passed, false);
+check('proximity tolerance is configurable',
+  evaluateIndicatorSetup(setupContext({ entry: { ema200: 108 } }), { ema_proximity_pct: 10 }).passed, true);
+
+// ── Exit rules ───────────────────────────────────────────────────────────────
+check('supertrend flip triggers an exit',
+  evaluateIndicatorExit(setupContext({ trend: { supertrendFlippedDown: true } })), 'ST_FLIP');
+check('EMA death cross triggers an exit',
+  evaluateIndicatorExit(setupContext({ entry: { emaDeathCross: true } })), 'EMA_CROSS');
+check('overbought RSI alone does not exit without a stoch cross down',
+  evaluateIndicatorExit(setupContext({ entry: { rsi: 85 } })), null);
+check('overbought RSI plus a stoch cross down exits',
+  evaluateIndicatorExit(setupContext({ entry: { rsi: 85, stochCrossDown: true } })), 'RSI_EXIT');
+check('a healthy position is not exited', evaluateIndicatorExit(setupContext()), null);
+check('exit rules can be switched off',
+  evaluateIndicatorExit(setupContext({ trend: { supertrendFlippedDown: true } }), { exit_on_supertrend_flip: false }), null);
 
 console.log(failures === 0 ? '\nAll indicator checks passed.' : `\n${failures} check(s) failed.`);
 process.exit(failures === 0 ? 0 : 1);

@@ -2,6 +2,7 @@ import axios from 'axios';
 import { ENABLE_LLM, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, LLM_TIMEOUT_MS } from '../config.js';
 import { now, stripThinking, strictJsonFromText } from '../utils.js';
 import { numSetting } from '../db/settings.js';
+import { compactIndicators } from '../indicators/context.js';
 import { db } from '../db/connection.js';
 
 export function normalizeDecision(parsed, fallbackReason = '') {
@@ -61,6 +62,7 @@ export function compactCandidateForLlm(row) {
     },
     savedWalletExposure: c.savedWalletExposure,
     twitterNarrative: c.twitterNarrative,
+    indicators: compactIndicators(c.indicatorContext, c.indicatorSetup),
     filters: c.filters,
   };
 }
@@ -89,6 +91,7 @@ export async function decideCandidateBatch(rows, triggerCandidateId) {
     'Use WATCH if candidates are interesting but none deserves a buy.',
     'Use PASS if the set is weak or unsafe.',
     'Chart data is ATH/range context. Do not penalize or reward a token only because 24h change is huge; new Pump tokens often do that.',
+    'When an "indicators" block is present it is real computed momentum, unlike the chart block: read it directly. A null value means not enough candle history, which is not a bearish signal.',
     'Use distance from ATH/range high and top-blast risk to decide whether entry is late.',
     'Confidence is your conviction from 0 to 100, not probability.',
   ].join(' ');

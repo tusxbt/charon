@@ -1,5 +1,5 @@
 import { now, json } from '../utils.js';
-import { numSetting, boolSetting, strategyById } from '../db/settings.js';
+import { numSetting, boolSetting, strategyById, activeStrategy } from '../db/settings.js';
 import { db } from '../db/connection.js';
 import { firstPositiveNumber, marketCapFromGmgn, tokenPriceFromGmgn } from '../utils.js';
 import { fetchGmgnTokenInfo } from '../enrichment/gmgn.js';
@@ -7,6 +7,8 @@ import { fetchJupiterAsset, fetchJupiterHolders, fetchJupiterChartContext, fetch
 import { liveWalletPubkey } from '../liveExecutor.js';
 import { fetchSavedWalletExposure } from '../enrichment/wallets.js';
 import { filterCandidate } from '../pipeline/candidateBuilder.js';
+import { buildIndicatorContext } from '../indicators/context.js';
+import { evaluateIndicatorExit } from '../indicators/entry.js';
 import { openPositions } from '../db/positions.js';
 import { updateCandidateSnapshot } from '../db/candidates.js';
 import { trending } from '../signals/trending.js';
@@ -30,6 +32,7 @@ export async function freshEntryMarket(mint, candidate) {
 export async function refreshCandidateForExecution(row) {
   const candidate = row.candidate;
   const mint = candidate.token.mint;
+  const execStrat = activeStrategy();
   const gmgn = await fetchGmgnTokenInfo(mint, false);
   const asset = await fetchJupiterAsset(mint, { useCache: false });
   const holders = await fetchJupiterHolders(mint);
@@ -48,8 +51,19 @@ export async function refreshCandidateForExecution(row) {
     candidate.metrics?.marketCapUsd,
     candidate.metrics?.graduatedMarketCapUsd,
   );
+  // On a 15-second timeframe an indicator setup can be gone by the time the
+  // order is ready, so the pre-execution guard has to re-read it too.
+  const indicatorContext = execStrat.use_indicators
+    ? await buildIndicatorContext(mint, execStrat).catch((err) => {
+        console.log(`[indicators] refresh ${mint.slice(0, 8)}... ${err.message}`);
+        return null;
+      })
+    : candidate.indicatorContext ?? null;
+
   const refreshed = {
     ...candidate,
+    indicatorContext,
+    indicatorSetup: null,
     token: {
       ...candidate.token,
       name: gmgn?.name || asset?.name || selectedTrending?.name || candidate.token.name,
@@ -157,6 +171,23 @@ export async function refreshPosition(position, { autoExit = true, jupiterPnl = 
         }
       } catch (err) {
         console.log(`[position] ${position.id} partial sell failed: ${err.message}`);
+      }
+    }
+  }
+
+  // Indicator exits run ahead of TP/SL so a Supertrend flip or death cross can
+  // close a position before it drifts to the stop — but SL still wins, because
+  // a hard stop must never be overridden by a slower signal.
+  if (!exitReason && strat?.use_indicators && !slHit) {
+    const context = await buildIndicatorContext(position.mint, strat).catch((err) => {
+      console.log(`[indicators] exit check ${position.mint.slice(0, 8)}... ${err.message}`);
+      return null;
+    });
+    if (context) {
+      const indicatorExit = evaluateIndicatorExit(context, strat);
+      if (indicatorExit) {
+        exitReason = indicatorExit;
+        console.log(`[position] ${position.id} indicator exit ${indicatorExit} at ${pnlPercent.toFixed(1)}%`);
       }
     }
   }

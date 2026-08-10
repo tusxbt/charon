@@ -48,6 +48,7 @@ export async function fetchServerSignals() {
     let processed = 0;
     let triggered = 0;
     let dipAlerts = 0;
+    let tooYoung = 0;
 
     for (const signal of signals) {
       const mint = signal.mint;
@@ -114,6 +115,16 @@ export async function fetchServerSignals() {
         if (tokenAge > strat.token_age_max_ms) { processed++; continue; }
       }
 
+      // Strategy gate: minimum token age. Indicator strategies need history
+      // before they can say anything — this skips the candle fetch entirely for
+      // tokens that cannot possibly have enough bars yet. The mint is not
+      // marked as permanently seen (seenSignals prunes after 10 minutes), so a
+      // token rejected at 20 minutes old gets re-evaluated as it matures.
+      if (strat.token_age_min_ms > 0) {
+        const tokenAge = signal.ageMs || 0;
+        if (tokenAge < strat.token_age_min_ms) { tooYoung++; processed++; continue; }
+      }
+
       // Determine route
       let route = null;
       if (hasFee && graduatedCoin && trendingToken) route = 'fee_graduated_trending';
@@ -172,7 +183,8 @@ export async function fetchServerSignals() {
     }
 
     const dipPart = dipAlerts > 0 ? `, ${dipAlerts} dip alerts` : '';
-    console.log(`[server] ${processed} signals, ${triggered} triggered${dipPart}, tracking ${trending.size}`);
+    const youngPart = tooYoung > 0 ? `, ${tooYoung} too young` : '';
+    console.log(`[server] ${processed} signals, ${triggered} triggered${dipPart}${youngPart}, tracking ${trending.size}`);
   } catch (err) {
     console.log(`[server] ${err.message}`);
   }

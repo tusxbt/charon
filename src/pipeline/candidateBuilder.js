@@ -4,6 +4,8 @@ import { fetchGmgnTokenInfo } from '../enrichment/gmgn.js';
 import { fetchJupiterAsset, fetchJupiterHolders, fetchJupiterChartContext } from '../enrichment/jupiter.js';
 import { fetchSavedWalletExposure } from '../enrichment/wallets.js';
 import { fetchTwitterNarrative } from '../enrichment/twitter.js';
+import { buildIndicatorContext } from '../indicators/context.js';
+import { evaluateIndicatorSetup } from '../indicators/entry.js';
 import { gmgnLink } from '../format.js';
 
 export function buildFeeSnapshot(fee, signature) {
@@ -112,6 +114,18 @@ export function filterCandidate(candidate) {
     }
   }
 
+  // Indicator setup — only evaluated for strategies that opt in, so every
+  // existing strategy keeps its current behaviour untouched.
+  if (strat.use_indicators) {
+    if (!candidate.indicatorContext) {
+      failures.push('indicators: context unavailable');
+    } else {
+      const setup = evaluateIndicatorSetup(candidate.indicatorContext, strat);
+      candidate.indicatorSetup = setup;
+      if (!setup.passed) failures.push(...setup.failures);
+    }
+  }
+
   return { passed: failures.length === 0, failures, strategy: strat.id };
 }
 
@@ -123,6 +137,14 @@ export async function buildCandidate({ mint, fee = null, signature = null, gradu
   const chart = await fetchJupiterChartContext(mint);
   const savedWalletExposure = await fetchSavedWalletExposure(mint, holders);
   const twitterNarrative = await fetchTwitterNarrative(graduatedCoin || jupiterAsset, gmgn);
+  // Candles are only pulled when the active strategy actually reads them —
+  // two extra chart requests per candidate is not free at Jupiter's rate limit.
+  const indicatorContext = strat.use_indicators
+    ? await buildIndicatorContext(mint, strat).catch((err) => {
+        console.log(`[indicators] ${mint.slice(0, 8)}... ${err.message}`);
+        return null;
+      })
+    : null;
   const priceUsd = firstPositiveNumber(tokenPriceFromGmgn(gmgn), jupiterAsset?.usdPrice, trendingToken?.price);
   const marketCapUsd = firstPositiveNumber(
     marketCapFromGmgn(gmgn),
@@ -184,6 +206,8 @@ export async function buildCandidate({ mint, fee = null, signature = null, gradu
     chart,
     savedWalletExposure,
     twitterNarrative,
+    indicatorContext,
+    indicatorSetup: null,
     createdAtMs: now(),
   };
   candidate.filters = filterCandidate(candidate);
