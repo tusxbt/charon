@@ -292,16 +292,20 @@ export function initDb() {
     llm_min_confidence: 50,
   }), ts);
 
-  // Multi-timeframe indicator strategy. Unlike every other strategy here it
-  // needs tokens to be OLD enough, not young enough: EMA200 on 15s candles
-  // requires 200 bars = 50 minutes of history, so token_age_min_ms gates the
-  // signal before any candle is fetched and min_entry_candles enforces the
-  // real requirement once they are.
+  // Multi-timeframe indicator strategy: EMA cluster on 15s, RSI/Stochastic on
+  // 5m, Supertrend direction on 5m.
+  //
+  // Unlike every other strategy here it needs tokens to be OLD enough, not
+  // young enough. token_age_min_ms below is only a floor — serverClient raises
+  // it to whatever the configured intervals actually require (with these
+  // defaults the binding constraint is the 5m Stochastic at 20 bars, not the
+  // 200-bar EMA on 15s candles), so changing an interval cannot silently leave
+  // the gate too low.
   stratInsert.run('indicator_pullback', 'Indicator Pullback', 0, JSON.stringify({
     entry_mode: 'immediate',
     min_source_count: 1,
     require_fee_claim: false,
-    token_age_min_ms: 3000000,
+    token_age_min_ms: 6000000,
     token_age_max_ms: 0,
     min_mcap_usd: 15000,
     max_mcap_usd: 0,
@@ -321,11 +325,19 @@ export function initDb() {
     entry_interval: '15_SECOND',
     entry_candles: 260,
     min_entry_candles: 200,
-    trend_interval: '15_MINUTE',
-    trend_candles: 80,
-    ema_proximity_pct: 3,
+    osc_interval: '5_MINUTE',
+    osc_candles: 60,
+    trend_interval: '5_MINUTE',
+    trend_candles: 60,
+    ema_proximity_pct: 5,
     require_price_above_ema200: false,
     require_trend_supertrend_bull: true,
+    rsi_period: 14,
+    stoch_k_period: 14,
+    stoch_k_smooth: 3,
+    stoch_d_period: 3,
+    supertrend_period: 10,
+    supertrend_multiplier: 3,
     rsi_bottom_max: 35,
     stoch_bottom_max: 20,
     require_stoch_cross_up: false,

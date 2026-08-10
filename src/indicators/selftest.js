@@ -6,7 +6,7 @@
 
 import { ema, sma, rsi, stochastic, atr, supertrend, crossedOver, crossedUnder } from './compute.js';
 import { indicatorSnapshot } from './snapshot.js';
-import { evaluateIndicatorSetup, evaluateIndicatorExit } from './entry.js';
+import { evaluateIndicatorSetup, evaluateIndicatorExit, minimumHistoryMs } from './entry.js';
 
 let failures = 0;
 const round = (value, dp = 2) => (value === null ? null : Number(value.toFixed(dp)));
@@ -99,11 +99,15 @@ check('empty candle array does not crash', indicatorSnapshot([]).candles, 0);
 const setupContext = (overrides = {}) => ({
   entry: {
     candles: 260, price: 100, ema50: 100.5, ema100: 99.4, ema200: 101.2,
-    rsi: 28, stochK: 12, stochD: 15, stochCrossUp: true, stochCrossDown: false,
     emaDeathCross: false, warmup: false,
     ...(overrides.entry || {}),
   },
-  trend: { candles: 80, supertrendDirection: 1, supertrend: 95, supertrendFlippedDown: false, ...(overrides.trend || {}) },
+  osc: {
+    candles: 60, rsi: 28, stochK: 12, stochD: 15,
+    stochCrossUp: true, stochCrossDown: false,
+    ...(overrides.osc || {}),
+  },
+  trend: { candles: 60, supertrendDirection: 1, supertrend: 95, supertrendFlippedDown: false, ...(overrides.trend || {}) },
 });
 
 const good = evaluateIndicatorSetup(setupContext());
@@ -127,17 +131,37 @@ const noTrend = evaluateIndicatorSetup({ ...setupContext(), trend: null });
 check('missing trend timeframe fails rather than passes', noTrend.passed, false);
 
 check('RSI above the bottom threshold fails',
-  evaluateIndicatorSetup(setupContext({ entry: { rsi: 62 } })).failures.some(f => f.startsWith('RSI:')), true);
+  evaluateIndicatorSetup(setupContext({ osc: { rsi: 62 } })).failures.some(f => f.startsWith('RSI 5_MINUTE:')), true);
 check('Stoch above the bottom threshold fails',
-  evaluateIndicatorSetup(setupContext({ entry: { stochK: 55 } })).failures.some(f => f.startsWith('Stoch %K:')), true);
+  evaluateIndicatorSetup(setupContext({ osc: { stochK: 55 } })).failures.some(f => f.startsWith('Stoch %K 5_MINUTE:')), true);
 check('a null RSI fails instead of passing silently',
-  evaluateIndicatorSetup(setupContext({ entry: { rsi: null } })).passed, false);
+  evaluateIndicatorSetup(setupContext({ osc: { rsi: null } })).passed, false);
+check('a missing oscillator timeframe fails',
+  evaluateIndicatorSetup({ ...setupContext(), osc: null }).passed, false);
+check('oscillators are read from the osc TF, not the entry TF',
+  evaluateIndicatorSetup(setupContext({ entry: { rsi: 95, stochK: 99 } })).passed, true);
 check('require_stoch_cross_up is off by default',
-  evaluateIndicatorSetup(setupContext({ entry: { stochCrossUp: false } })).passed, true);
+  evaluateIndicatorSetup(setupContext({ osc: { stochCrossUp: false } })).passed, true);
 check('require_stoch_cross_up rejects when enabled',
-  evaluateIndicatorSetup(setupContext({ entry: { stochCrossUp: false } }), { require_stoch_cross_up: true }).passed, false);
-check('proximity tolerance is configurable',
-  evaluateIndicatorSetup(setupContext({ entry: { ema200: 108 } }), { ema_proximity_pct: 10 }).passed, true);
+  evaluateIndicatorSetup(setupContext({ osc: { stochCrossUp: false } }), { require_stoch_cross_up: true }).passed, false);
+check('default proximity is 5%: a 4.5% gap passes',
+  evaluateIndicatorSetup(setupContext({ entry: { ema200: 104.5 } })).passed, true);
+check('default proximity is 5%: a 6% gap fails',
+  evaluateIndicatorSetup(setupContext({ entry: { ema200: 106 } })).passed, false);
+check('proximity tolerance is configurable down to 3%',
+  evaluateIndicatorSetup(setupContext({ entry: { ema200: 104.5 } }), { ema_proximity_pct: 3 }).passed, false);
+
+// ── Minimum history is derived from the configured intervals ────────────────
+const MIN = 60 * 1000;
+check('default minimum history is the 5m Stochastic at 20 bars (100 min)',
+  minimumHistoryMs() / MIN, 100);
+check('a 15m Supertrend raises the floor to 165 min',
+  minimumHistoryMs({ trend_interval: '15_MINUTE' }) / MIN, 165);
+check('a 1m entry TF raises the floor to 200 min',
+  minimumHistoryMs({ entry_interval: '1_MINUTE' }) / MIN, 200);
+check('an unknown interval throws rather than silently passing', (() => {
+  try { minimumHistoryMs({ osc_interval: '7_MINUTE' }); return false; } catch { return true; }
+})(), true);
 
 // ── Exit rules ───────────────────────────────────────────────────────────────
 check('supertrend flip triggers an exit',
@@ -145,9 +169,9 @@ check('supertrend flip triggers an exit',
 check('EMA death cross triggers an exit',
   evaluateIndicatorExit(setupContext({ entry: { emaDeathCross: true } })), 'EMA_CROSS');
 check('overbought RSI alone does not exit without a stoch cross down',
-  evaluateIndicatorExit(setupContext({ entry: { rsi: 85 } })), null);
+  evaluateIndicatorExit(setupContext({ osc: { rsi: 85 } })), null);
 check('overbought RSI plus a stoch cross down exits',
-  evaluateIndicatorExit(setupContext({ entry: { rsi: 85, stochCrossDown: true } })), 'RSI_EXIT');
+  evaluateIndicatorExit(setupContext({ osc: { rsi: 85, stochCrossDown: true } })), 'RSI_EXIT');
 check('a healthy position is not exited', evaluateIndicatorExit(setupContext()), null);
 check('exit rules can be switched off',
   evaluateIndicatorExit(setupContext({ trend: { supertrendFlippedDown: true } }), { exit_on_supertrend_flip: false }), null);

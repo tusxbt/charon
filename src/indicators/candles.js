@@ -9,20 +9,9 @@ import axios from 'axios';
 import { JSON_HEADERS } from '../config.js';
 import { now } from '../utils.js';
 import { db } from '../db/connection.js';
+import { intervalSeconds } from './intervals.js';
 
-const INTERVAL_SECONDS = {
-  '1_SECOND': 1,
-  '5_SECOND': 5,
-  '15_SECOND': 15,
-  '30_SECOND': 30,
-  '1_MINUTE': 60,
-  '5_MINUTE': 300,
-  '15_MINUTE': 900,
-  '30_MINUTE': 1800,
-  '1_HOUR': 3600,
-  '4_HOUR': 14400,
-  '1_DAY': 86400,
-};
+export { intervalSeconds, knownIntervals } from './intervals.js';
 
 // Overlap on incremental fetches: the newest stored bar is usually still open,
 // so we always re-pull a few and let the upsert correct them.
@@ -30,16 +19,6 @@ const REFRESH_OVERLAP_BARS = 3;
 const MAX_FETCH_BARS = 500;
 
 let backoffUntil = 0;
-
-export function intervalSeconds(interval) {
-  const seconds = INTERVAL_SECONDS[interval];
-  if (!seconds) throw new Error(`Unknown candle interval '${interval}'. Known: ${Object.keys(INTERVAL_SECONDS).join(', ')}`);
-  return seconds;
-}
-
-export function knownIntervals() {
-  return Object.keys(INTERVAL_SECONDS);
-}
 
 // Jupiter has returned both second and millisecond timestamps across endpoints;
 // normalise to seconds so the primary key stays stable either way.

@@ -2,6 +2,7 @@ import axios from 'axios';
 import { SIGNAL_SERVER_URL, SIGNAL_SERVER_KEY, SIGNAL_POLL_MS } from '../config.js';
 import { now } from '../utils.js';
 import { activeStrategy } from '../db/settings.js';
+import { minimumHistoryMs } from '../indicators/entry.js';
 import { storeSignalEvent, trendingSignalPass, trending } from './trending.js';
 import { graduated } from './graduated.js';
 
@@ -45,6 +46,9 @@ export async function fetchServerSignals() {
     prune(seenSignals, 10 * 60_000);
 
     const strat = activeStrategy();
+    const minTokenAgeMs = strat.use_indicators
+      ? Math.max(Number(strat.token_age_min_ms || 0), minimumHistoryMs(strat))
+      : Number(strat.token_age_min_ms || 0);
     let processed = 0;
     let triggered = 0;
     let dipAlerts = 0;
@@ -120,9 +124,14 @@ export async function fetchServerSignals() {
       // tokens that cannot possibly have enough bars yet. The mint is not
       // marked as permanently seen (seenSignals prunes after 10 minutes), so a
       // token rejected at 20 minutes old gets re-evaluated as it matures.
-      if (strat.token_age_min_ms > 0) {
+      //
+      // For indicator strategies the floor is derived from the configured
+      // intervals rather than trusted from config: the binding constraint is
+      // easy to get wrong, and setting it too low does not error, it just
+      // silently never passes the indicator gate.
+      if (minTokenAgeMs > 0) {
         const tokenAge = signal.ageMs || 0;
-        if (tokenAge < strat.token_age_min_ms) { tooYoung++; processed++; continue; }
+        if (tokenAge < minTokenAgeMs) { tooYoung++; processed++; continue; }
       }
 
       // Determine route
